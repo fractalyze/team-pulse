@@ -1,0 +1,87 @@
+// Copyright 2026 Fractalyze Inc. All rights reserved.
+
+import type {
+  WeeklySnapshot,
+  WeeklyDelta,
+  GitHubMetrics,
+  KnowledgeMetrics,
+  ContextSyncMetrics,
+  MemberMilestone,
+} from "../types";
+import { TEAM } from "../config";
+
+/** Compute week-over-week delta between current and previous snapshots. */
+export function computeDelta(
+  current: WeeklySnapshot,
+  previous: WeeklySnapshot | null
+): WeeklyDelta | null {
+  if (!previous) return null;
+
+  return {
+    prsMergedDelta: current.github.totalMerged - previous.github.totalMerged,
+    prsOpenDelta: current.github.totalOpen - previous.github.totalOpen,
+    knowledgeCreatedDelta:
+      current.knowledge.totalCreated - previous.knowledge.totalCreated,
+    knowledgeUpdatedDelta:
+      current.knowledge.totalUpdated - previous.knowledge.totalUpdated,
+    contextSyncSessionsDelta:
+      current.contextSync.totalSessions - previous.contextSync.totalSessions,
+  };
+}
+
+/** Build member milestones from GitHub data. */
+export function buildMilestones(github: GitHubMetrics): MemberMilestone[] {
+  return TEAM.map((member) => {
+    const mergedPRs = github.repos.flatMap((r) =>
+      r.merged.filter(
+        (pr) => member.github !== "TBD" && pr.author === member.github
+      )
+    );
+    const openPRs = github.repos.flatMap((r) =>
+      r.open.filter(
+        (pr) => member.github !== "TBD" && pr.author === member.github
+      )
+    );
+
+    const achieved = mergedPRs.map(
+      (pr) => `PR#${pr.number} ${pr.repo}: ${pr.title}`
+    );
+    const blockingPoints = openPRs
+      .filter((pr) => {
+        const daysOpen = Math.floor(
+          (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
+        );
+        return daysOpen >= 3;
+      })
+      .map((pr) => {
+        const daysOpen = Math.floor(
+          (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
+        );
+        return `PR#${pr.number} ${pr.repo}: ${daysOpen}일간 리뷰 대기`;
+      });
+
+    return {
+      name: member.name,
+      achieved,
+      blockingPoints,
+      nextWeekGoals: [],
+    };
+  });
+}
+
+/** Assemble a complete weekly snapshot. */
+export function assembleSnapshot(
+  weekId: string,
+  github: GitHubMetrics,
+  knowledge: KnowledgeMetrics,
+  contextSync: ContextSyncMetrics
+): WeeklySnapshot {
+  return {
+    weekId,
+    collectedAt: new Date().toISOString(),
+    github,
+    knowledge,
+    contextSync,
+    milestones: buildMilestones(github),
+  };
+}

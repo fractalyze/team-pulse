@@ -9,9 +9,15 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@notionhq/client": "^2.3.0",
+    "@octokit/rest": "^22.0.1",
+    "@slack/web-api": "^7.14.1",
+    "@upstash/redis": "^1.36.3",
+    "googleapis": "^171.4.0",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
