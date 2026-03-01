@@ -26,6 +26,10 @@ export interface PRInfo {
   closedAt: string | null;
   reviewers: string[];
   leadTimeDays: number | null;
+  body: string | null;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
 }
 
 export interface RepoPRSummary {
@@ -36,6 +40,30 @@ export interface RepoPRSummary {
   totalOpen: number;
 }
 
+export interface ReviewInfo {
+  prNumber: number;
+  repo: string;
+  reviewer: string;
+  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";
+  submittedAt: string;
+}
+
+export interface MissedReviewEntry {
+  prKey: string;
+  missedReviewers: string[];
+}
+
+export interface ReviewHealthMetrics {
+  totalReviews: number;
+  totalApprovals: number;
+  prsWithNoReview: number;
+  unreviewedPRKeys: string[];
+  avgReviewLatencyHours: number | null;
+  avgLeadTimeHours: number | null;
+  missedReviews: MissedReviewEntry[];
+  byReviewer: Record<string, number>;
+}
+
 export interface GitHubMetrics {
   weekId: string;
   repos: RepoPRSummary[];
@@ -44,6 +72,9 @@ export interface GitHubMetrics {
   byAuthor: Record<string, { merged: number; open: number }>;
   byObjective: Record<string, number>;
   avgLeadTimeDays: number | null;
+  totalCommits: number;
+  commitsByAuthor: Record<string, number>;
+  reviewHealth: ReviewHealthMetrics;
 }
 
 // --- Knowledge Graph Data ---
@@ -95,6 +126,44 @@ export interface ContextSyncMetrics {
   pendingActionItems: number;
 }
 
+// --- OKR Data ---
+
+export interface OKRStatus {
+  objective: string;
+  quarter: string;
+  keyResults: {
+    name: string;
+    status: "done" | "in_progress" | "not_started" | "at_risk";
+    statusText: string;
+  }[];
+}
+
+export interface WeeklyGoal {
+  month: string;
+  week: string;
+  content: string;
+  isHardDeadline: boolean;
+}
+
+export interface OKRMetrics {
+  weekId: string;
+  objectives: OKRStatus[];
+  thisWeekGoal: WeeklyGoal | null;
+  nextHardDeadline: WeeklyGoal | null;
+}
+
+// --- Propagation Tracking ---
+
+export interface PropagationEntry {
+  prNumber: number;
+  repo: string;
+  prTitle: string;
+  author: string;
+  knowledgeEntries: string[];
+  contextSyncMentions: string[];
+  propagationScore: 0 | 1 | 2 | 3;
+}
+
 // --- Milestone Tracking ---
 
 export interface MemberMilestone {
@@ -113,6 +182,8 @@ export interface WeeklySnapshot {
   knowledge: KnowledgeMetrics;
   contextSync: ContextSyncMetrics;
   milestones: MemberMilestone[];
+  okr: OKRMetrics;
+  propagation: PropagationEntry[];
 }
 
 // --- Delta (week-over-week comparison) ---
@@ -123,6 +194,9 @@ export interface WeeklyDelta {
   knowledgeCreatedDelta: number;
   knowledgeUpdatedDelta: number;
   contextSyncSessionsDelta: number;
+  commitsDelta: number;
+  avgReviewLatencyDelta: number | null;
+  unreviewedMergesDelta: number;
 }
 
 // --- Dashboard View Models ---
@@ -131,4 +205,6 @@ export interface DashboardSummary {
   current: WeeklySnapshot;
   delta: WeeklyDelta | null;
   previousWeekId: string | null;
+  nextWeekId: string | null;
+  allWeekIds: string[];
 }

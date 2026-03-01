@@ -2,11 +2,12 @@
 
 import { WebClient } from "@slack/web-api";
 import { TEAM, SLACK_CHANNEL, DASHBOARD_URL } from "../config";
-import { formatDateKST, getWeekRange } from "../week";
+import { formatDateKST } from "../week";
 import type {
   GitHubMetrics,
   KnowledgeMetrics,
   ContextSyncMetrics,
+  OKRMetrics,
   WeeklyDelta,
 } from "../types";
 
@@ -39,7 +40,7 @@ function section(text: string): Block {
   };
 }
 
-function divider(): Block {
+function dividerBlock(): Block {
   return { type: "divider" };
 }
 
@@ -50,90 +51,112 @@ function context(text: string): Block {
   };
 }
 
-/** Build channel summary message blocks. */
+/** Build channel summary with ACTION NEEDED + MEETING PREP structure. */
 export function buildChannelSummary(
   github: GitHubMetrics,
   knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
+  okr: OKRMetrics,
   delta: WeeklyDelta | null,
   notionPageUrl: string | null
 ): Block[] {
   const today = new Date();
   const blocks: Block[] = [];
 
+  // Header with key stats
   blocks.push(header(`📊 Weekly Team Pulse - ${formatDateKST(today)}`));
-  blocks.push(divider());
 
-  // GitHub Activity
   const mergedDelta =
     delta !== null
       ? ` (${delta.prsMergedDelta >= 0 ? "+" : ""}${delta.prsMergedDelta})`
       : "";
-  const repoCount = github.repos.filter((r) => r.totalMerged > 0).length;
-  const avgDays =
-    github.avgLeadTimeDays !== null
-      ? `${github.avgLeadTimeDays} days`
-      : "N/A";
   blocks.push(
     section(
-      `*GitHub Activity*\n` +
-        `• PRs Merged: ${github.totalMerged}${mergedDelta} across ${repoCount} repos\n` +
-        `• PRs Open: ${github.totalOpen} (avg lead time: ${avgDays})`
+      `This Week: *${github.totalMerged} PRs${mergedDelta}* | *${github.totalCommits} commits* | *${knowledge.totalCreated} knowledge*`
     )
   );
 
-  // Knowledge Growth
-  const kgDelta =
-    delta !== null
-      ? ` (${delta.knowledgeCreatedDelta >= 0 ? "+" : ""}${delta.knowledgeCreatedDelta})`
-      : "";
-  const newNames = knowledge.newEntries
-    .map((e) => e.name)
-    .slice(0, 3)
-    .join(", ");
-  blocks.push(
-    section(
-      `*Knowledge Growth*\n` +
-        `• 🆕 ${knowledge.totalCreated} new articles${kgDelta} | 🔄 ${knowledge.totalUpdated} updated\n` +
-        (newNames ? `• ${newNames}` : "")
-    )
-  );
+  blocks.push(dividerBlock());
 
-  // Context Sync
-  if (contextSync.notes.length > 0) {
-    const { start } = getWeekRange(contextSync.weekId);
-    const lines = contextSync.notes
-      .map((n) => {
-        const dayLabel = formatDateKST(n.date);
-        const topics = n.topics.slice(0, 2).join(", ") || n.title;
-        return `• ${dayLabel}: ${topics}`;
-      })
-      .join("\n");
-    blocks.push(section(`*Context Sync 이번 주 주제*\n${lines}`));
+  // --- ACTION NEEDED ---
+  blocks.push(section("*--- ACTION NEEDED ---*"));
+
+  // Review queue: PRs waiting > 2 days
+  const longWaitPRs = github.repos
+    .flatMap((r) => r.open)
+    .filter((pr) => {
+      const daysOpen = Math.floor(
+        (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
+      );
+      return daysOpen >= 2;
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+  if (longWaitPRs.length > 0) {
+    let reviewText = `*Review Queue (${longWaitPRs.length} PRs > 2일):*\n`;
+    for (const pr of longWaitPRs.slice(0, 5)) {
+      const daysOpen = Math.floor(
+        (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
+      );
+      const reviewers =
+        pr.reviewers.length > 0
+          ? ` @${pr.reviewers.join(", @")}`
+          : " (리뷰어 없음)";
+      reviewText += `  <${pr.url}|${pr.repo}#${pr.number}> ${daysOpen}일${reviewers}\n`;
+    }
+    blocks.push(section(reviewText));
+  } else {
+    blocks.push(section("*Review Queue:* 모든 PR이 최신 상태"));
   }
 
-  // Mission Alignment
-  const objEntries = Object.entries(github.byObjective)
-    .filter(([, count]) => count > 0)
-    .sort((a, b) => b[1] - a[1]);
-  if (objEntries.length > 0) {
-    const objLines = objEntries
-      .map(([obj, count]) => {
-        const repos = github.repos
-          .filter(
-            (r) => r.totalMerged > 0 && github.byObjective[obj] !== undefined
-          )
-          .map((r) => r.repo)
-          .slice(0, 3)
-          .join(", ");
-        return `• ${obj}: PR ${count}건 (${repos})`;
-      })
-      .join("\n");
-    blocks.push(section(`*Mission Alignment*\n${objLines}`));
+  // Pending action items
+  const pendingActions = contextSync.notes.flatMap((n) =>
+    n.actionItems
+      .filter((a) => !a.done)
+      .map((a) => ({ ...a, noteTitle: n.title }))
+  );
+  if (pendingActions.length > 0) {
+    let actionText = `*Pending Actions (${pendingActions.length}건):*\n`;
+    for (const action of pendingActions.slice(0, 5)) {
+      const assignee = action.assignee ? `@${action.assignee}` : "";
+      actionText += `  ${assignee}: ${action.text}\n`;
+    }
+    blocks.push(section(actionText));
+  }
+
+  blocks.push(dividerBlock());
+
+  // --- MEETING PREP ---
+  blocks.push(section("*--- MEETING PREP ---*"));
+
+  const prepLines: string[] = [];
+  if (notionPageUrl) {
+    prepLines.push(`📋 Notion 준비됨: <${notionPageUrl}|열기>`);
+  }
+
+  // Hard deadline warning
+  if (okr.nextHardDeadline) {
+    prepLines.push(
+      `⚠️ HARD deadline: ${okr.nextHardDeadline.month} ${okr.nextHardDeadline.week} week - ${okr.nextHardDeadline.content}`
+    );
+  }
+
+  // This week's goal
+  if (okr.thisWeekGoal) {
+    prepLines.push(
+      `📅 이번 주 목표: ${okr.thisWeekGoal.content}`
+    );
+  }
+
+  if (prepLines.length > 0) {
+    blocks.push(section(prepLines.join("\n")));
   }
 
   // Footer
-  blocks.push(divider());
+  blocks.push(dividerBlock());
   const links: string[] = [];
   if (notionPageUrl) links.push(`📋 <${notionPageUrl}|Notion>`);
   links.push(`📈 <${DASHBOARD_URL}/week/${github.weekId}|Dashboard>`);
@@ -142,21 +165,23 @@ export function buildChannelSummary(
   return blocks;
 }
 
-/** Build individual DM message blocks. */
+/** Build individual DM with YOUR WEEK + PREP structure. */
 export function buildIndividualDM(
   memberName: string,
   github: GitHubMetrics,
   knowledge: KnowledgeMetrics,
-  weekLabel: string
+  contextSync: ContextSyncMetrics,
+  weekLabel: string,
+  notionPageUrl: string | null
 ): Block[] {
   const member = TEAM.find((m) => m.name === memberName);
   if (!member) return [];
 
   const blocks: Block[] = [];
-  blocks.push(header(`🔔 [${memberName}] Weekly Pulse - ${weekLabel}`));
-  blocks.push(divider());
+  blocks.push(header(`🔔 [${memberName}] Prep - ${weekLabel}`));
+  blocks.push(dividerBlock());
 
-  // Find member's PRs
+  // YOUR WEEK summary
   if (member.github !== "TBD") {
     const mergedPRs = github.repos.flatMap((r) =>
       r.merged.filter((pr) => pr.author === member.github)
@@ -164,55 +189,66 @@ export function buildIndividualDM(
     const openPRs = github.repos.flatMap((r) =>
       r.open.filter((pr) => pr.author === member.github)
     );
+    const reviewCount =
+      github.reviewHealth.byReviewer[member.github] ?? 0;
 
-    let prText = "*Your PRs*\n";
+    blocks.push(
+      section(
+        `*YOUR WEEK:* ${mergedPRs.length} merged, ${reviewCount} reviewed, ${openPRs.length} open`
+      )
+    );
+
+    // Merged PRs details
     if (mergedPRs.length > 0) {
-      prText += mergedPRs
+      let prText = mergedPRs
         .map(
           (pr) =>
-            `• ✅ Merged: <${pr.url}|#${pr.number} ${pr.repo}> - ${pr.title}`
+            `• ✅ <${pr.url}|#${pr.number} ${pr.repo}> - ${pr.title}`
         )
         .join("\n");
-      prText += "\n";
+      blocks.push(section(prText));
     }
+
+    // Open PRs with wait time
     if (openPRs.length > 0) {
-      prText += openPRs
+      let openText = openPRs
         .map((pr) => {
           const daysOpen = Math.floor(
             (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
           );
-          const reviewers =
-            pr.reviewers.length > 0
-              ? `, ${pr.reviewers.length} reviewer pending`
-              : "";
-          return `• ⏳ Open: <${pr.url}|#${pr.number} ${pr.repo}> (${daysOpen} days${reviewers})`;
+          return `• ⏳ <${pr.url}|#${pr.number} ${pr.repo}> (${daysOpen}일)`;
         })
         .join("\n");
+      blocks.push(section(openText));
     }
-    if (mergedPRs.length === 0 && openPRs.length === 0) {
-      prText += "• No PRs this week";
-    }
-    blocks.push(section(prText));
   }
 
-  // Knowledge contributions
-  const memberKnowledge = knowledge.newEntries.filter(
-    (e) => e.linkedPR !== null
+  // PREP: pending action items for this member
+  const memberActions = contextSync.notes.flatMap((n) =>
+    n.actionItems.filter(
+      (a) =>
+        !a.done &&
+        a.assignee.toLowerCase() === memberName.toLowerCase()
+    )
   );
-  if (memberKnowledge.length > 0) {
-    blocks.push(
-      section(
-        `*이번 주 Knowledge*\n` +
-          memberKnowledge
-            .map((e) => `• 🆕 작성: ${e.name}`)
-            .slice(0, 5)
-            .join("\n")
-      )
+  if (memberActions.length > 0) {
+    let actionText = `*미완료 actions:*\n`;
+    actionText += memberActions
+      .map((a) => `• ${a.text}`)
+      .join("\n");
+    blocks.push(section(actionText));
+  }
+
+  // Prep links
+  blocks.push(dividerBlock());
+  const prepLines: string[] = [];
+  if (notionPageUrl) {
+    prepLines.push(
+      `📋 PREP: Notion에 "next week" 입력 <${notionPageUrl}|열기>`
     );
   }
-
-  blocks.push(divider());
-  blocks.push(context("📋 오늘 Weekly Sync 17:00 KST"));
+  prepLines.push("📋 오늘 Weekly Sync 17:00 KST");
+  blocks.push(context(prepLines.join("\n")));
 
   return blocks;
 }
@@ -222,6 +258,7 @@ export async function sendChannelSummary(
   github: GitHubMetrics,
   knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
+  okr: OKRMetrics,
   delta: WeeklyDelta | null,
   notionPageUrl: string | null
 ): Promise<void> {
@@ -235,6 +272,7 @@ export async function sendChannelSummary(
     github,
     knowledge,
     contextSync,
+    okr,
     delta,
     notionPageUrl
   );
@@ -250,7 +288,9 @@ export async function sendChannelSummary(
 export async function sendIndividualDMs(
   github: GitHubMetrics,
   knowledge: KnowledgeMetrics,
-  weekLabel: string
+  contextSync: ContextSyncMetrics,
+  weekLabel: string,
+  notionPageUrl: string | null
 ): Promise<void> {
   const client = getSlackClient();
 
@@ -262,7 +302,9 @@ export async function sendIndividualDMs(
         member.name,
         github,
         knowledge,
-        weekLabel
+        contextSync,
+        weekLabel,
+        notionPageUrl
       );
       if (blocks.length === 0) continue;
 

@@ -6,6 +6,8 @@ import type {
   GitHubMetrics,
   KnowledgeMetrics,
   ContextSyncMetrics,
+  OKRMetrics,
+  PropagationEntry,
   MemberMilestone,
 } from "../types";
 import { TEAM } from "../config";
@@ -17,6 +19,11 @@ export function computeDelta(
 ): WeeklyDelta | null {
   if (!previous) return null;
 
+  const avgLatencyCurrent =
+    current.github.reviewHealth.avgReviewLatencyHours;
+  const avgLatencyPrev =
+    previous.github.reviewHealth.avgReviewLatencyHours;
+
   return {
     prsMergedDelta: current.github.totalMerged - previous.github.totalMerged,
     prsOpenDelta: current.github.totalOpen - previous.github.totalOpen,
@@ -26,6 +33,14 @@ export function computeDelta(
       current.knowledge.totalUpdated - previous.knowledge.totalUpdated,
     contextSyncSessionsDelta:
       current.contextSync.totalSessions - previous.contextSync.totalSessions,
+    commitsDelta: current.github.totalCommits - previous.github.totalCommits,
+    avgReviewLatencyDelta:
+      avgLatencyCurrent !== null && avgLatencyPrev !== null
+        ? Math.round((avgLatencyCurrent - avgLatencyPrev) * 10) / 10
+        : null,
+    unreviewedMergesDelta:
+      current.github.reviewHealth.prsWithNoReview -
+      previous.github.reviewHealth.prsWithNoReview,
   };
 }
 
@@ -74,7 +89,9 @@ export function assembleSnapshot(
   weekId: string,
   github: GitHubMetrics,
   knowledge: KnowledgeMetrics,
-  contextSync: ContextSyncMetrics
+  contextSync: ContextSyncMetrics,
+  okr: OKRMetrics,
+  propagation: PropagationEntry[]
 ): WeeklySnapshot {
   return {
     weekId,
@@ -83,5 +100,7 @@ export function assembleSnapshot(
     knowledge,
     contextSync,
     milestones: buildMilestones(github),
+    okr,
+    propagation,
   };
 }

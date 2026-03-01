@@ -5,7 +5,9 @@ import { hasWeeklySyncToday } from "@/lib/collectors/gcal";
 import { collectGitHubMetrics } from "@/lib/collectors/github";
 import { collectKnowledgeMetrics } from "@/lib/collectors/knowledge";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
+import { collectOKRMetrics } from "@/lib/collectors/okr";
 import { createWeeklySyncPage } from "@/lib/generators/notion-page";
+import { computePropagation } from "@/lib/generators/propagation";
 import {
   sendChannelSummary,
   sendIndividualDMs,
@@ -46,34 +48,54 @@ export async function GET(request: Request) {
     const weekId = getWeekId();
     console.log(`Running weekly pulse for ${weekId}`);
 
-    // Step 2: Collect all metrics in parallel
+    // Step 2: Collect all metrics in parallel (OKR is optional)
     const [github, knowledge, contextSync] = await Promise.all([
       collectGitHubMetrics(weekId),
       collectKnowledgeMetrics(weekId),
       collectContextSyncMetrics(weekId),
     ]);
 
-    // Step 3: Get previous week data for delta
+    let okr: Awaited<ReturnType<typeof collectOKRMetrics>>;
+    try {
+      okr = await collectOKRMetrics(weekId);
+    } catch (error) {
+      console.warn("OKR collection failed, using empty defaults:", error);
+      okr = {
+        weekId,
+        objectives: [],
+        thisWeekGoal: null,
+        nextHardDeadline: null,
+      };
+    }
+
+    // Step 3: Compute propagation
+    const propagation = computePropagation(github, knowledge, contextSync);
+
+    // Step 4: Get previous week data for delta
     const previousWeekId = getPreviousWeekId(weekId);
     const previousSnapshot = await getSnapshot(previousWeekId);
     const currentSnapshot = assembleSnapshot(
       weekId,
       github,
       knowledge,
-      contextSync
+      contextSync,
+      okr,
+      propagation
     );
     const delta = computeDelta(currentSnapshot, previousSnapshot);
 
-    // Step 4: Save snapshot to KV
+    // Step 5: Save snapshot to KV
     await saveSnapshot(currentSnapshot);
 
-    // Step 5: Create Notion meeting note
+    // Step 6: Create Notion meeting note
     let notionPageId: string | null = null;
     try {
       notionPageId = await createWeeklySyncPage(
         github,
         knowledge,
         contextSync,
+        okr,
+        propagation,
         delta
       );
     } catch (error) {
@@ -84,12 +106,13 @@ export async function GET(request: Request) {
       ? `https://notion.so/${notionPageId.replace(/-/g, "")}`
       : null;
 
-    // Step 6: Send Slack messages
+    // Step 7: Send Slack messages
     try {
       await sendChannelSummary(
         github,
         knowledge,
         contextSync,
+        okr,
         delta,
         notionPageUrl
       );
@@ -99,7 +122,13 @@ export async function GET(request: Request) {
 
     try {
       const weekLabel = `${formatDateKST(new Date())} 주차`;
-      await sendIndividualDMs(github, knowledge, weekLabel);
+      await sendIndividualDMs(
+        github,
+        knowledge,
+        contextSync,
+        weekLabel,
+        notionPageUrl
+      );
     } catch (error) {
       console.error("Failed to send Slack DMs:", error);
     }
@@ -110,6 +139,7 @@ export async function GET(request: Request) {
       github: {
         totalMerged: github.totalMerged,
         totalOpen: github.totalOpen,
+        totalCommits: github.totalCommits,
       },
       knowledge: {
         created: knowledge.totalCreated,
@@ -117,6 +147,13 @@ export async function GET(request: Request) {
       },
       contextSync: {
         sessions: contextSync.totalSessions,
+      },
+      okr: {
+        objectives: okr.objectives.length,
+      },
+      propagation: {
+        total: propagation.length,
+        gaps: propagation.filter((p) => p.propagationScore === 0).length,
       },
       notionPageId,
       delta,

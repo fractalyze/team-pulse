@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { getDashboardSummary } from "@/lib/store/kv";
 import { DashboardContent } from "../../dashboard-content";
+import { WeekNav } from "../../week-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -30,23 +31,7 @@ export default async function WeekPage({ params }: WeekPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/" className="text-gray-500 hover:text-gray-700">
-          &larr; Dashboard
-        </Link>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Week {id}
-        </h1>
-        {summary.previousWeekId && (
-          <Link
-            href={`/week/${summary.previousWeekId}`}
-            className="text-sm text-blue-600 hover:underline"
-          >
-            &larr; {summary.previousWeekId}
-          </Link>
-        )}
-      </div>
-
+      <WeekNav summary={summary} />
       <DashboardContent summary={summary} />
 
       {/* Member milestones */}

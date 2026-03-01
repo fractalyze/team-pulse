@@ -4,7 +4,9 @@ import { NextResponse } from "next/server";
 import { collectGitHubMetrics } from "@/lib/collectors/github";
 import { collectKnowledgeMetrics } from "@/lib/collectors/knowledge";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
+import { collectOKRMetrics } from "@/lib/collectors/okr";
 import { createWeeklySyncPage } from "@/lib/generators/notion-page";
+import { computePropagation } from "@/lib/generators/propagation";
 import {
   sendChannelSummary,
   sendIndividualDMs,
@@ -26,25 +28,43 @@ export async function POST(request: Request) {
   }
 
   let actions: string[] = ["collect", "notion", "slack", "dm"];
+  let weekId = getWeekId();
   try {
     const body = await request.json();
     if (body.actions && Array.isArray(body.actions)) {
       actions = body.actions;
     }
+    if (body.weekId && typeof body.weekId === "string") {
+      weekId = body.weekId;
+    }
   } catch {
     // Use default actions
   }
-
-  const weekId = getWeekId();
   const results: Record<string, unknown> = { weekId };
 
   try {
-    // Always collect
+    // Always collect (OKR is optional)
     const [github, knowledge, contextSync] = await Promise.all([
       collectGitHubMetrics(weekId),
       collectKnowledgeMetrics(weekId),
       collectContextSyncMetrics(weekId),
     ]);
+
+    let okr: Awaited<ReturnType<typeof collectOKRMetrics>>;
+    try {
+      okr = await collectOKRMetrics(weekId);
+    } catch (error) {
+      console.warn("OKR collection failed, using empty defaults:", error);
+      okr = {
+        weekId,
+        objectives: [],
+        thisWeekGoal: null,
+        nextHardDeadline: null,
+      };
+    }
+
+    // Compute propagation
+    const propagation = computePropagation(github, knowledge, contextSync);
 
     const previousWeekId = getPreviousWeekId(weekId);
     const previousSnapshot = await getSnapshot(previousWeekId);
@@ -52,7 +72,9 @@ export async function POST(request: Request) {
       weekId,
       github,
       knowledge,
-      contextSync
+      contextSync,
+      okr,
+      propagation
     );
     const delta = computeDelta(currentSnapshot, previousSnapshot);
 
@@ -65,12 +87,18 @@ export async function POST(request: Request) {
       github: {
         totalMerged: github.totalMerged,
         totalOpen: github.totalOpen,
+        totalCommits: github.totalCommits,
       },
       knowledge: {
         created: knowledge.totalCreated,
         updated: knowledge.totalUpdated,
       },
       contextSync: { sessions: contextSync.totalSessions },
+      okr: { objectives: okr.objectives.length },
+      propagation: {
+        total: propagation.length,
+        gaps: propagation.filter((p) => p.propagationScore === 0).length,
+      },
       delta,
     };
 
@@ -79,6 +107,8 @@ export async function POST(request: Request) {
         github,
         knowledge,
         contextSync,
+        okr,
+        propagation,
         delta
       );
       results.notion = {
@@ -99,6 +129,7 @@ export async function POST(request: Request) {
         github,
         knowledge,
         contextSync,
+        okr,
         delta,
         notionPageUrl
       );
@@ -107,7 +138,13 @@ export async function POST(request: Request) {
 
     if (actions.includes("dm")) {
       const weekLabel = `${formatDateKST(new Date())} 주차`;
-      await sendIndividualDMs(github, knowledge, weekLabel);
+      await sendIndividualDMs(
+        github,
+        knowledge,
+        contextSync,
+        weekLabel,
+        notionPageUrl
+      );
       results.dm = "sent";
     }
 

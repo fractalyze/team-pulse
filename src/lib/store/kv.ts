@@ -2,7 +2,7 @@
 
 import { Redis } from "@upstash/redis";
 import type { WeeklySnapshot, DashboardSummary } from "../types";
-import { getPreviousWeekId } from "../week";
+import { getPreviousWeekId, getWeekRange } from "../week";
 import { computeDelta } from "../generators/metrics";
 
 function getRedis(): Redis {
@@ -21,11 +21,48 @@ export async function saveSnapshot(snapshot: WeeklySnapshot): Promise<void> {
   const redis = getRedis();
   await redis.set(snapshotKey(snapshot.weekId), JSON.stringify(snapshot));
 
-  // Also update the "latest" pointer
-  await redis.set("snapshot:latest", snapshot.weekId);
+  // Use the week's start date as score so weeks sort chronologically
+  const { start } = getWeekRange(snapshot.weekId);
+  await redis.zadd("weeks", { score: start.getTime(), member: snapshot.weekId });
 
-  // Add to the sorted set of all week IDs for listing
-  await redis.zadd("weeks", { score: Date.now(), member: snapshot.weekId });
+  // Update "latest" pointer only if this week is newer than current latest
+  const currentLatest = await redis.get<string>("snapshot:latest");
+  if (!currentLatest || snapshot.weekId > currentLatest) {
+    await redis.set("snapshot:latest", snapshot.weekId);
+  }
+}
+
+/** Default review health for old snapshots without this field. */
+const DEFAULT_REVIEW_HEALTH = {
+  totalReviews: 0,
+  totalApprovals: 0,
+  prsWithNoReview: 0,
+  unreviewedPRKeys: [],
+  avgReviewLatencyHours: null,
+  avgLeadTimeHours: null,
+  missedReviews: [],
+  byReviewer: {},
+};
+
+/** Backfill missing fields for old snapshots. */
+function backfillSnapshot(snapshot: WeeklySnapshot): WeeklySnapshot {
+  const github = snapshot.github;
+  return {
+    ...snapshot,
+    github: {
+      ...github,
+      totalCommits: github.totalCommits ?? 0,
+      commitsByAuthor: github.commitsByAuthor ?? {},
+      reviewHealth: github.reviewHealth ?? DEFAULT_REVIEW_HEALTH,
+    },
+    okr: snapshot.okr ?? {
+      weekId: snapshot.weekId,
+      objectives: [],
+      thisWeekGoal: null,
+      nextHardDeadline: null,
+    },
+    propagation: snapshot.propagation ?? [],
+  };
 }
 
 /** Get a weekly snapshot by week ID. */
@@ -35,7 +72,9 @@ export async function getSnapshot(
   const redis = getRedis();
   const data = await redis.get<string>(snapshotKey(weekId));
   if (!data) return null;
-  return typeof data === "string" ? JSON.parse(data) : data;
+  const snapshot: WeeklySnapshot =
+    typeof data === "string" ? JSON.parse(data) : data;
+  return backfillSnapshot(snapshot);
 }
 
 /** Get the latest week ID. */
@@ -55,6 +94,7 @@ export async function getAllWeekIds(): Promise<string[]> {
 export async function getDashboardSummary(
   weekId?: string
 ): Promise<DashboardSummary | null> {
+  const allWeekIds = await getAllWeekIds(); // newest first
   const targetWeekId = weekId ?? (await getLatestWeekId());
   if (!targetWeekId) return null;
 
@@ -65,10 +105,16 @@ export async function getDashboardSummary(
   const previous = await getSnapshot(previousWeekId);
   const delta = computeDelta(current, previous);
 
+  // Find next week (the one after this in chronological order)
+  const idx = allWeekIds.indexOf(targetWeekId);
+  const nextWeekId = idx > 0 ? allWeekIds[idx - 1] : null;
+
   return {
     current,
     delta,
     previousWeekId: previous ? previousWeekId : null,
+    nextWeekId,
+    allWeekIds,
   };
 }
 

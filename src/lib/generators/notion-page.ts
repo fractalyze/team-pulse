@@ -2,12 +2,15 @@
 
 import { Client } from "@notionhq/client";
 import { CONTEXT_SYNC_DB, DASHBOARD_URL, TEAM } from "../config";
-import { formatDateKST } from "../week";
+import { formatDateKST, getWeekId } from "../week";
 import type {
   GitHubMetrics,
   KnowledgeMetrics,
   ContextSyncMetrics,
+  OKRMetrics,
+  PropagationEntry,
   WeeklyDelta,
+  ReviewHealthMetrics,
 } from "../types";
 
 type BlockObjectRequest = Parameters<
@@ -19,6 +22,8 @@ function getNotionClient(): Client {
   if (!token) throw new Error("NOTION_API_KEY is not set");
   return new Client({ auth: token });
 }
+
+// --- Block helpers ---
 
 function heading2(text: string): BlockObjectRequest {
   return {
@@ -75,47 +80,184 @@ function callout(text: string, emoji: string = "📊"): BlockObjectRequest {
   };
 }
 
-/** Build milestone section for a team member. */
-function buildMemberMilestone(
-  name: string,
+function quote(text: string): BlockObjectRequest {
+  return {
+    object: "block",
+    type: "quote",
+    quote: {
+      rich_text: [{ type: "text", text: { content: text } }],
+    },
+  };
+}
+
+function todoItem(text: string, checked: boolean = false): BlockObjectRequest {
+  return {
+    object: "block",
+    type: "to_do",
+    to_do: {
+      rich_text: [{ type: "text", text: { content: text } }],
+      checked,
+    },
+  };
+}
+
+function toggle(text: string): BlockObjectRequest {
+  return {
+    object: "block",
+    type: "toggle",
+    toggle: {
+      rich_text: [{ type: "text", text: { content: text } }],
+    },
+  };
+}
+
+// --- Section builders ---
+
+/** Build OKR section (Section 2). */
+function buildOKRSection(
+  okr: OKRMetrics,
   github: GitHubMetrics
 ): BlockObjectRequest[] {
   const blocks: BlockObjectRequest[] = [];
-  blocks.push(bulletItem(`${name}: next week → [수동 입력]`));
 
-  // Find merged PRs by this member
-  const memberPRs = github.repos.flatMap((r) =>
-    r.merged.filter((pr) => {
-      const member = TEAM.find((m) => m.name === name);
-      return member && member.github !== "TBD" && pr.author === member.github;
-    })
-  );
-
-  if (memberPRs.length > 0) {
+  // Weekly Goal schedule
+  blocks.push(heading3("이번 주 목표 (Weekly Goal Schedule)"));
+  if (okr.thisWeekGoal) {
     blocks.push(
-      bulletItem(
-        `  achieve: ${memberPRs.map((pr) => `PR#${pr.number} ${pr.repo}: ${pr.title} (merged ${formatDateKST(pr.mergedAt!)})`).join(", ")}`
+      quote(
+        `${okr.thisWeekGoal.month} ${okr.thisWeekGoal.week} week: ${okr.thisWeekGoal.content}`
       )
     );
   } else {
-    blocks.push(bulletItem("  achieve: [수동 입력]"));
+    blocks.push(paragraph("이번 주 목표: [데이터 없음]"));
   }
-  blocks.push(bulletItem("  blocking point: [수동 입력]"));
-  blocks.push(bulletItem("  achievable?: [수동 입력]"));
+
+  if (okr.nextHardDeadline) {
+    blocks.push(
+      callout(
+        `Next HARD deadline: ${okr.nextHardDeadline.month} ${okr.nextHardDeadline.week} week - ${okr.nextHardDeadline.content}`,
+        "⚠️"
+      )
+    );
+  }
+
+  // OKR objectives with KR tables
+  for (const obj of okr.objectives) {
+    blocks.push(heading3(`${obj.quarter} Objective: ${obj.objective}`));
+
+    for (const kr of obj.keyResults) {
+      const statusIcon =
+        kr.status === "done"
+          ? "✅"
+          : kr.status === "at_risk"
+            ? "🔴"
+            : kr.status === "in_progress"
+              ? "🔄"
+              : "⬜";
+      blocks.push(
+        bulletItem(`${statusIcon} ${kr.name} — ${kr.statusText}`)
+      );
+    }
+
+    // Find PRs that contribute to this objective's repos
+    const objRepos = github.repos.filter((r) => r.totalMerged > 0);
+    const contributingPRs = objRepos.flatMap((r) =>
+      r.merged.slice(0, 3).map((pr) => `${pr.repo}#${pr.number}: ${pr.title}`)
+    );
+
+    if (contributingPRs.length > 0) {
+      blocks.push(paragraph("이번 주 KR 기여 PR:"));
+      for (const prRef of contributingPRs.slice(0, 5)) {
+        blocks.push(bulletItem(prRef));
+      }
+    }
+  }
 
   return blocks;
 }
 
-/** Build the weekly retro section with auto-filled data. */
+/** Build milestone section (Section 3). */
+function buildMilestoneSection(
+  github: GitHubMetrics,
+  reviewHealth: ReviewHealthMetrics
+): BlockObjectRequest[] {
+  const blocks: BlockObjectRequest[] = [];
+
+  for (const member of TEAM) {
+    blocks.push(heading3(member.name));
+    blocks.push(bulletItem("next week → [수동 입력]"));
+
+    // Achieve: merged PRs
+    const memberPRs = github.repos.flatMap((r) =>
+      r.merged.filter(
+        (pr) => member.github !== "TBD" && pr.author === member.github
+      )
+    );
+
+    if (memberPRs.length > 0) {
+      blocks.push(paragraph("achieve (자동)"));
+      for (const pr of memberPRs) {
+        blocks.push(
+          bulletItem(
+            `${pr.repo}#${pr.number}: ${pr.title} (merged ${formatDateKST(pr.mergedAt!)})`
+          )
+        );
+      }
+    } else {
+      blocks.push(bulletItem("achieve: [이번 주 머지된 PR 없음]"));
+    }
+
+    // Review contributions
+    const reviewCount = member.github !== "TBD"
+      ? (reviewHealth.byReviewer[member.github] ?? 0)
+      : 0;
+    if (reviewCount > 0) {
+      blocks.push(bulletItem(`타인 PR ${reviewCount}건 리뷰`));
+    }
+
+    // Blocking point: open PRs with long review wait
+    const openPRs = github.repos.flatMap((r) =>
+      r.open.filter(
+        (pr) => member.github !== "TBD" && pr.author === member.github
+      )
+    );
+    const blockedPRs = openPRs.filter((pr) => {
+      const daysOpen = Math.floor(
+        (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
+      );
+      return daysOpen >= 2;
+    });
+
+    if (blockedPRs.length > 0) {
+      blocks.push(paragraph("blocking point"));
+      for (const pr of blockedPRs) {
+        const daysOpen = Math.floor(
+          (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
+        );
+        blocks.push(
+          bulletItem(`${pr.repo}#${pr.number}: ${daysOpen}일간 리뷰 대기 중`)
+        );
+      }
+    }
+
+    blocks.push(bulletItem("achievable? → [수동 입력]"));
+  }
+
+  return blocks;
+}
+
+/** Build retro section with auto-generated signals (Section 4). */
 function buildRetroSection(
   github: GitHubMetrics,
   knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
+  okr: OKRMetrics,
   delta: WeeklyDelta | null
 ): BlockObjectRequest[] {
   const blocks: BlockObjectRequest[] = [];
 
-  blocks.push(heading3("1) Last week check"));
+  // 1) Last week check (auto)
+  blocks.push(heading3("1) Last week check (자동)"));
 
   const mergedDelta = delta
     ? ` (${delta.prsMergedDelta >= 0 ? "+" : ""}${delta.prsMergedDelta} vs last week)`
@@ -123,79 +265,158 @@ function buildRetroSection(
   const repoCount = github.repos.filter((r) => r.totalMerged > 0).length;
   blocks.push(
     bulletItem(
-      `PRs Merged: ${github.totalMerged} across ${repoCount} repos${mergedDelta}`
+      `PRs: ${github.totalMerged} merged${mergedDelta} across ${repoCount} repos, ${github.totalCommits} commits`
     )
   );
 
-  const kgDelta = delta
-    ? ` (${delta.knowledgeCreatedDelta >= 0 ? "+" : ""}${delta.knowledgeCreatedDelta})`
-    : "";
+  const avgLatency = github.reviewHealth.avgReviewLatencyHours;
+  const latencyText = avgLatency !== null ? `${avgLatency}h` : "N/A";
   blocks.push(
     bulletItem(
-      `Knowledge Growth: ${knowledge.totalCreated} new, ${knowledge.totalUpdated} updated${kgDelta}`
+      `Reviews: 평균 ${latencyText} 대기, 리뷰 없이 머지 ${github.reviewHealth.prsWithNoReview}건`
     )
   );
 
-  const topicSummary = contextSync.notes
-    .flatMap((n) => n.topics.slice(0, 2))
-    .join(", ");
-  blocks.push(bulletItem(`Context Sync Topics: ${topicSummary || "N/A"}`));
+  const knowledgeTotal = knowledge.totalCreated + knowledge.totalUpdated;
+  const coveragePercent =
+    github.totalMerged > 0
+      ? Math.round(
+          (knowledge.prSummaries.filter(
+            (s) => s.knowledgeCreated.length > 0 || s.knowledgeUpdated.length > 0
+          ).length /
+            github.totalMerged) *
+            100
+        )
+      : 0;
+  blocks.push(
+    bulletItem(
+      `Knowledge: ${knowledge.totalCreated} new, ${knowledge.totalUpdated} updated (${coveragePercent}% 커버리지)`
+    )
+  );
 
-  blocks.push(heading3("2) What happened/Topic raised"));
-  blocks.push(paragraph("[수동 입력]"));
-  blocks.push(heading3("3) ONE focus"));
-  blocks.push(paragraph("[수동 입력]"));
-  blocks.push(heading3("4) Next week change"));
-  blocks.push(paragraph("[수동 입력]"));
+  const pendingActions = contextSync.notes.reduce(
+    (sum, n) => sum + n.actionItems.filter((a) => !a.done).length,
+    0
+  );
+  const totalActions = contextSync.notes.reduce(
+    (sum, n) => sum + n.actionItems.length,
+    0
+  );
+  const doneActions = totalActions - pendingActions;
+  blocks.push(
+    bulletItem(
+      `Context Sync: ${contextSync.totalSessions} sessions, ${contextSync.totalTopics} topics, ${totalActions} action items (${doneActions} 완료)`
+    )
+  );
 
-  return blocks;
-}
+  // 2) Signals (auto)
+  blocks.push(heading3("2) Signals (자동 - 주의 필요 사항)"));
 
-/** Build Context Sync summary table section. */
-function buildContextSyncSection(
-  contextSync: ContextSyncMetrics
-): BlockObjectRequest[] {
-  const blocks: BlockObjectRequest[] = [];
-  blocks.push(heading3("이번 주 Context Sync 요약"));
-
-  if (contextSync.notes.length === 0) {
-    blocks.push(paragraph("이번 주 Context Sync 세션 없음"));
-    return blocks;
-  }
-
-  for (const note of contextSync.notes) {
-    const topics = note.topics.slice(0, 3).join(", ") || "N/A";
-    const insights = note.keyInsights[0] || "-";
+  // PRs with long review wait
+  const longWaitPRs = github.repos
+    .flatMap((r) => r.open)
+    .filter((pr) => {
+      const daysOpen = Math.floor(
+        (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
+      );
+      return daysOpen >= 5;
+    });
+  if (longWaitPRs.length > 0) {
+    const prList = longWaitPRs
+      .map((pr) => `${pr.repo}#${pr.number}`)
+      .join(", ");
     blocks.push(
-      bulletItem(`${formatDateKST(note.date)} | ${topics} | ${insights}`)
+      callout(
+        `PR ${longWaitPRs.length}건 > 5일 리뷰 없음: ${prList}`,
+        "⚠️"
+      )
     );
   }
 
+  // Pending action items
+  if (pendingActions > 0) {
+    blocks.push(
+      callout(
+        `Action items ${totalActions}건 중 ${doneActions}건 완료`,
+        "⚠️"
+      )
+    );
+  }
+
+  // Hard deadline warning
+  if (okr.nextHardDeadline) {
+    blocks.push(
+      callout(
+        `HARD deadline: ${okr.nextHardDeadline.month} ${okr.nextHardDeadline.week} week - ${okr.nextHardDeadline.content}`,
+        "⚠️"
+      )
+    );
+  }
+
+  // 3-5) Manual sections
+  blocks.push(heading3("3) What happened/Topic raised"));
+  blocks.push(paragraph("[수동 입력]"));
+  blocks.push(heading3("4) ONE focus"));
+  blocks.push(paragraph("[수동 입력]"));
+  blocks.push(heading3("5) Next week change"));
+  blocks.push(paragraph("[수동 입력]"));
+
   return blocks;
 }
 
-/** Build Knowledge Graph update section. */
-function buildKnowledgeSection(
-  knowledge: KnowledgeMetrics
+/** Build appendix with toggle blocks. */
+function buildAppendix(
+  contextSync: ContextSyncMetrics,
+  knowledge: KnowledgeMetrics,
+  github: GitHubMetrics,
+  propagation: PropagationEntry[]
 ): BlockObjectRequest[] {
   const blocks: BlockObjectRequest[] = [];
-  blocks.push(heading3("이번 주 Knowledge Graph 업데이트"));
 
-  if (
-    knowledge.newEntries.length === 0 &&
-    knowledge.updatedEntries.length === 0
-  ) {
-    blocks.push(paragraph("이번 주 Knowledge 업데이트 없음"));
-    return blocks;
+  // Context Sync summary toggle
+  if (contextSync.notes.length > 0) {
+    blocks.push(toggle("Context Sync 이번 주 요약"));
+    // Note: toggle children must be appended separately after page creation
+    // For now, add as regular blocks that follow the toggle
+    for (const note of contextSync.notes) {
+      const topics = note.topics.slice(0, 3).join(", ") || "N/A";
+      const insight = note.keyInsights[0] || "";
+      blocks.push(
+        bulletItem(
+          `${formatDateKST(note.date)}: ${topics}${insight ? ` — ${insight}` : ""}`
+        )
+      );
+    }
   }
 
-  for (const entry of knowledge.newEntries) {
+  // Knowledge Graph updates toggle
+  blocks.push(toggle("Knowledge Graph 업데이트"));
+  for (const entry of knowledge.newEntries.slice(0, 10)) {
     const prRef = entry.linkedPR ? ` (${entry.linkedPR})` : "";
     blocks.push(bulletItem(`🆕 ${entry.name}${prRef}`));
   }
-  for (const entry of knowledge.updatedEntries) {
+  for (const entry of knowledge.updatedEntries.slice(0, 10)) {
     const prRef = entry.linkedPR ? ` (${entry.linkedPR})` : "";
     blocks.push(bulletItem(`🔄 ${entry.name}${prRef}`));
+  }
+
+  // Knowledge gap count
+  const gapPRs = propagation.filter((p) => p.propagationScore === 0);
+  if (gapPRs.length > 0) {
+    blocks.push(
+      callout(`${gapPRs.length} PRs knowledge 미추출 (gap)`, "⚠️")
+    );
+  }
+
+  // Full PR list by repo toggle
+  blocks.push(toggle("전체 PR 목록 (레포별)"));
+  for (const repo of github.repos.filter((r) => r.totalMerged > 0)) {
+    const prList = repo.merged
+      .map((pr) => `#${pr.number} ${pr.title}`)
+      .join(", ");
+    blocks.push(
+      bulletItem(`${repo.repo} (${repo.totalMerged} merged): ${prList}`)
+    );
   }
 
   return blocks;
@@ -206,11 +427,14 @@ export async function createWeeklySyncPage(
   github: GitHubMetrics,
   knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
+  okr: OKRMetrics,
+  propagation: PropagationEntry[],
   delta: WeeklyDelta | null
 ): Promise<string> {
   const notion = getNotionClient();
   const today = new Date();
-  const title = `Weekly Sync - ${formatDateKST(today)}`;
+  const weekNum = getWeekId().replace(/^\d{4}-W/, "W");
+  const title = `Weekly Sync - ${weekNum} ${formatDateKST(today)}`;
   const dateStr = today.toISOString().split("T")[0];
 
   // Create the page
@@ -235,44 +459,34 @@ export async function createWeeklySyncPage(
   blocks.push(bulletItem("Operation: [수동 입력]"));
   blocks.push(bulletItem("Business: [수동 입력]"));
 
-  // 2. Objective
+  // 2. Objective (OKR-centric)
   blocks.push(heading2("2. Objective: zkVM supports(e2e)"));
   blocks.push(divider());
-  blocks.push(
-    heading3("1Q Objective: Poseidon/NTT/Sumcheck/MerkleTree 90% SOTA")
-  );
-  blocks.push(paragraph("[OKR 현황 자동 수집 예정]"));
-  blocks.push(heading3("2Q Objective: E2E zkVMs"));
-  blocks.push(paragraph("[현황 자동 수집 예정]"));
+  blocks.push(...buildOKRSection(okr, github));
 
-  // 3. Milestone sharing
+  // 3. Milestone sharing (per-member)
   blocks.push(heading2("3. Milestone sharing"));
   blocks.push(divider());
-  for (const member of TEAM) {
-    blocks.push(...buildMemberMilestone(member.name, github));
-  }
+  blocks.push(...buildMilestoneSection(github, github.reviewHealth));
 
   // 4. Retro
   blocks.push(heading2("4. Retro."));
   blocks.push(divider());
-  blocks.push(...buildRetroSection(github, knowledge, contextSync, delta));
-
-  // Auto-generated sections
-  blocks.push(divider());
   blocks.push(
-    callout(
-      `이번 주 Context Sync 요약 & Knowledge Graph 업데이트 (자동 생성)`,
-      "📊"
-    )
+    ...buildRetroSection(github, knowledge, contextSync, okr, delta)
   );
-  blocks.push(...buildContextSyncSection(contextSync));
-  blocks.push(...buildKnowledgeSection(knowledge));
+
+  // Appendix
+  blocks.push(divider());
+  blocks.push(heading2("Appendix (자동)"));
+  blocks.push(
+    ...buildAppendix(contextSync, knowledge, github, propagation)
+  );
 
   // Dashboard link
   blocks.push(divider());
-  blocks.push(heading3("📈 Weekly Metrics"));
   blocks.push(
-    paragraph(`Full Dashboard: ${DASHBOARD_URL}/week/${github.weekId}`)
+    paragraph(`📈 Full Dashboard: ${DASHBOARD_URL}/week/${github.weekId}`)
   );
 
   // Notion API limits appending to 100 blocks at a time
