@@ -5,10 +5,8 @@ import { CONTEXT_SYNC_DB, DASHBOARD_URL, TEAM } from "../config";
 import { formatDateKST, getWeekId } from "../week";
 import type {
   GitHubMetrics,
-  KnowledgeMetrics,
   ContextSyncMetrics,
   OKRMetrics,
-  PropagationEntry,
   WeeklyDelta,
   ReviewHealthMetrics,
 } from "../types";
@@ -86,17 +84,6 @@ function quote(text: string): BlockObjectRequest {
     type: "quote",
     quote: {
       rich_text: [{ type: "text", text: { content: text } }],
-    },
-  };
-}
-
-function todoItem(text: string, checked: boolean = false): BlockObjectRequest {
-  return {
-    object: "block",
-    type: "to_do",
-    to_do: {
-      rich_text: [{ type: "text", text: { content: text } }],
-      checked,
     },
   };
 }
@@ -249,7 +236,6 @@ function buildMilestoneSection(
 /** Build retro section with auto-generated signals (Section 4). */
 function buildRetroSection(
   github: GitHubMetrics,
-  knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
   okr: OKRMetrics,
   delta: WeeklyDelta | null
@@ -274,23 +260,6 @@ function buildRetroSection(
   blocks.push(
     bulletItem(
       `Reviews: 평균 ${latencyText} 대기, 리뷰 없이 머지 ${github.reviewHealth.prsWithNoReview}건`
-    )
-  );
-
-  const knowledgeTotal = knowledge.totalCreated + knowledge.totalUpdated;
-  const coveragePercent =
-    github.totalMerged > 0
-      ? Math.round(
-          (knowledge.prSummaries.filter(
-            (s) => s.knowledgeCreated.length > 0 || s.knowledgeUpdated.length > 0
-          ).length /
-            github.totalMerged) *
-            100
-        )
-      : 0;
-  blocks.push(
-    bulletItem(
-      `Knowledge: ${knowledge.totalCreated} new, ${knowledge.totalUpdated} updated (${coveragePercent}% 커버리지)`
     )
   );
 
@@ -367,17 +336,13 @@ function buildRetroSection(
 /** Build appendix with toggle blocks. */
 function buildAppendix(
   contextSync: ContextSyncMetrics,
-  knowledge: KnowledgeMetrics,
-  github: GitHubMetrics,
-  propagation: PropagationEntry[]
+  github: GitHubMetrics
 ): BlockObjectRequest[] {
   const blocks: BlockObjectRequest[] = [];
 
   // Context Sync summary toggle
   if (contextSync.notes.length > 0) {
     blocks.push(toggle("Context Sync 이번 주 요약"));
-    // Note: toggle children must be appended separately after page creation
-    // For now, add as regular blocks that follow the toggle
     for (const note of contextSync.notes) {
       const topics = note.topics.slice(0, 3).join(", ") || "N/A";
       const insight = note.keyInsights[0] || "";
@@ -387,25 +352,6 @@ function buildAppendix(
         )
       );
     }
-  }
-
-  // Knowledge Graph updates toggle
-  blocks.push(toggle("Knowledge Graph 업데이트"));
-  for (const entry of knowledge.newEntries.slice(0, 10)) {
-    const prRef = entry.linkedPR ? ` (${entry.linkedPR})` : "";
-    blocks.push(bulletItem(`🆕 ${entry.name}${prRef}`));
-  }
-  for (const entry of knowledge.updatedEntries.slice(0, 10)) {
-    const prRef = entry.linkedPR ? ` (${entry.linkedPR})` : "";
-    blocks.push(bulletItem(`🔄 ${entry.name}${prRef}`));
-  }
-
-  // Knowledge gap count
-  const gapPRs = propagation.filter((p) => p.propagationScore === 0);
-  if (gapPRs.length > 0) {
-    blocks.push(
-      callout(`${gapPRs.length} PRs knowledge 미추출 (gap)`, "⚠️")
-    );
   }
 
   // Full PR list by repo toggle
@@ -425,10 +371,8 @@ function buildAppendix(
 /** Create a Weekly Sync meeting note in Notion. */
 export async function createWeeklySyncPage(
   github: GitHubMetrics,
-  knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
   okr: OKRMetrics,
-  propagation: PropagationEntry[],
   delta: WeeklyDelta | null
 ): Promise<string> {
   const notion = getNotionClient();
@@ -473,14 +417,14 @@ export async function createWeeklySyncPage(
   blocks.push(heading2("4. Retro."));
   blocks.push(divider());
   blocks.push(
-    ...buildRetroSection(github, knowledge, contextSync, okr, delta)
+    ...buildRetroSection(github, contextSync, okr, delta)
   );
 
   // Appendix
   blocks.push(divider());
   blocks.push(heading2("Appendix (자동)"));
   blocks.push(
-    ...buildAppendix(contextSync, knowledge, github, propagation)
+    ...buildAppendix(contextSync, github)
   );
 
   // Dashboard link

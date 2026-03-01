@@ -39,7 +39,7 @@ function actionItemsColor(
 
 export function DashboardContent({ summary }: DashboardContentProps) {
   const { current, delta } = summary;
-  const { github, knowledge, contextSync } = current;
+  const { github, contextSync } = current;
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
 
   const repoCount = github.repos.filter((r) => r.totalMerged > 0).length;

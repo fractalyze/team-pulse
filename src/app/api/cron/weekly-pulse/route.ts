@@ -2,18 +2,14 @@
 
 import { NextResponse } from "next/server";
 import { hasWeeklySyncToday } from "@/lib/collectors/gcal";
-import { collectGitHubMetrics } from "@/lib/collectors/github";
-import { collectKnowledgeMetrics } from "@/lib/collectors/knowledge";
-import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { collectOKRMetrics } from "@/lib/collectors/okr";
 import { createWeeklySyncPage } from "@/lib/generators/notion-page";
-import { computePropagation } from "@/lib/generators/propagation";
 import {
   sendChannelSummary,
   sendIndividualDMs,
 } from "@/lib/generators/slack-msg";
-import { assembleSnapshot, computeDelta } from "@/lib/generators/metrics";
-import { saveSnapshot, getSnapshot } from "@/lib/store/kv";
+import { computeDelta } from "@/lib/generators/metrics";
+import { getSnapshot, saveSnapshot } from "@/lib/store/kv";
 import { getWeekId, getPreviousWeekId, formatDateKST } from "@/lib/week";
 
 export const maxDuration = 60;
@@ -48,54 +44,38 @@ export async function GET(request: Request) {
     const weekId = getWeekId();
     console.log(`Running weekly pulse for ${weekId}`);
 
-    // Step 2: Collect all metrics in parallel (OKR is optional)
-    const [github, knowledge, contextSync] = await Promise.all([
-      collectGitHubMetrics(weekId),
-      collectKnowledgeMetrics(weekId),
-      collectContextSyncMetrics(weekId),
-    ]);
-
-    let okr: Awaited<ReturnType<typeof collectOKRMetrics>>;
-    try {
-      okr = await collectOKRMetrics(weekId);
-    } catch (error) {
-      console.warn("OKR collection failed, using empty defaults:", error);
-      okr = {
-        weekId,
-        objectives: [],
-        thisWeekGoal: null,
-        nextHardDeadline: null,
-      };
+    // Step 2: Read snapshot from Redis (saved by daily-collect)
+    let currentSnapshot = await getSnapshot(weekId);
+    if (!currentSnapshot) {
+      return NextResponse.json({
+        status: "skipped",
+        reason: `No snapshot found for ${weekId}. daily-collect may not have run yet.`,
+      });
     }
 
-    // Step 3: Compute propagation
-    const propagation = computePropagation(github, knowledge, contextSync);
+    // Step 3: Collect OKR (not in daily-collect)
+    let okr = currentSnapshot.okr;
+    try {
+      okr = await collectOKRMetrics(weekId);
+      // Update snapshot with fresh OKR data
+      currentSnapshot = { ...currentSnapshot, okr };
+      await saveSnapshot(currentSnapshot);
+    } catch (error) {
+      console.warn("OKR collection failed, using existing data:", error);
+    }
 
-    // Step 4: Get previous week data for delta
+    // Step 4: Compute delta
     const previousWeekId = getPreviousWeekId(weekId);
     const previousSnapshot = await getSnapshot(previousWeekId);
-    const currentSnapshot = assembleSnapshot(
-      weekId,
-      github,
-      knowledge,
-      contextSync,
-      okr,
-      propagation
-    );
     const delta = computeDelta(currentSnapshot, previousSnapshot);
 
-    // Step 5: Save snapshot to KV
-    await saveSnapshot(currentSnapshot);
-
-    // Step 6: Create Notion meeting note
+    // Step 5: Create Notion meeting note
     let notionPageId: string | null = null;
     try {
       notionPageId = await createWeeklySyncPage(
-        github,
-        knowledge,
-        contextSync,
+        currentSnapshot.github,
+        currentSnapshot.contextSync,
         okr,
-        propagation,
         delta
       );
     } catch (error) {
@@ -106,12 +86,11 @@ export async function GET(request: Request) {
       ? `https://notion.so/${notionPageId.replace(/-/g, "")}`
       : null;
 
-    // Step 7: Send Slack messages
+    // Step 6: Send Slack messages
     try {
       await sendChannelSummary(
-        github,
-        knowledge,
-        contextSync,
+        currentSnapshot.github,
+        currentSnapshot.contextSync,
         okr,
         delta,
         notionPageUrl
@@ -123,9 +102,8 @@ export async function GET(request: Request) {
     try {
       const weekLabel = `${formatDateKST(new Date())} 주차`;
       await sendIndividualDMs(
-        github,
-        knowledge,
-        contextSync,
+        currentSnapshot.github,
+        currentSnapshot.contextSync,
         weekLabel,
         notionPageUrl
       );
@@ -137,23 +115,15 @@ export async function GET(request: Request) {
       status: "success",
       weekId,
       github: {
-        totalMerged: github.totalMerged,
-        totalOpen: github.totalOpen,
-        totalCommits: github.totalCommits,
-      },
-      knowledge: {
-        created: knowledge.totalCreated,
-        updated: knowledge.totalUpdated,
+        totalMerged: currentSnapshot.github.totalMerged,
+        totalOpen: currentSnapshot.github.totalOpen,
+        totalCommits: currentSnapshot.github.totalCommits,
       },
       contextSync: {
-        sessions: contextSync.totalSessions,
+        sessions: currentSnapshot.contextSync.totalSessions,
       },
       okr: {
         objectives: okr.objectives.length,
-      },
-      propagation: {
-        total: propagation.length,
-        gaps: propagation.filter((p) => p.propagationScore === 0).length,
       },
       notionPageId,
       delta,

@@ -5,7 +5,6 @@ import { TEAM, SLACK_CHANNEL, DASHBOARD_URL } from "../config";
 import { formatDateKST } from "../week";
 import type {
   GitHubMetrics,
-  KnowledgeMetrics,
   ContextSyncMetrics,
   OKRMetrics,
   WeeklyDelta,
@@ -54,7 +53,6 @@ function context(text: string): Block {
 /** Build channel summary with ACTION NEEDED + MEETING PREP structure. */
 export function buildChannelSummary(
   github: GitHubMetrics,
-  knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
   okr: OKRMetrics,
   delta: WeeklyDelta | null,
@@ -72,7 +70,7 @@ export function buildChannelSummary(
       : "";
   blocks.push(
     section(
-      `This Week: *${github.totalMerged} PRs${mergedDelta}* | *${github.totalCommits} commits* | *${knowledge.totalCreated} knowledge*`
+      `This Week: *${github.totalMerged} PRs${mergedDelta}* | *${github.totalCommits} commits*`
     )
   );
 
@@ -169,7 +167,6 @@ export function buildChannelSummary(
 export function buildIndividualDM(
   memberName: string,
   github: GitHubMetrics,
-  knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
   weekLabel: string,
   notionPageUrl: string | null
@@ -200,7 +197,7 @@ export function buildIndividualDM(
 
     // Merged PRs details
     if (mergedPRs.length > 0) {
-      let prText = mergedPRs
+      const prText = mergedPRs
         .map(
           (pr) =>
             `• ✅ <${pr.url}|#${pr.number} ${pr.repo}> - ${pr.title}`
@@ -211,7 +208,7 @@ export function buildIndividualDM(
 
     // Open PRs with wait time
     if (openPRs.length > 0) {
-      let openText = openPRs
+      const openText = openPRs
         .map((pr) => {
           const daysOpen = Math.floor(
             (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
@@ -256,7 +253,6 @@ export function buildIndividualDM(
 /** Send channel summary to Slack. */
 export async function sendChannelSummary(
   github: GitHubMetrics,
-  knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
   okr: OKRMetrics,
   delta: WeeklyDelta | null,
@@ -270,7 +266,6 @@ export async function sendChannelSummary(
   const client = getSlackClient();
   const blocks = buildChannelSummary(
     github,
-    knowledge,
     contextSync,
     okr,
     delta,
@@ -287,7 +282,6 @@ export async function sendChannelSummary(
 /** Send individual DMs to team members. */
 export async function sendIndividualDMs(
   github: GitHubMetrics,
-  knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
   weekLabel: string,
   notionPageUrl: string | null
@@ -301,7 +295,6 @@ export async function sendIndividualDMs(
       const blocks = buildIndividualDM(
         member.name,
         github,
-        knowledge,
         contextSync,
         weekLabel,
         notionPageUrl

@@ -2,11 +2,9 @@
 
 import { NextResponse } from "next/server";
 import { collectGitHubMetrics } from "@/lib/collectors/github";
-import { collectKnowledgeMetrics } from "@/lib/collectors/knowledge";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { collectOKRMetrics } from "@/lib/collectors/okr";
 import { createWeeklySyncPage } from "@/lib/generators/notion-page";
-import { computePropagation } from "@/lib/generators/propagation";
 import {
   sendChannelSummary,
   sendIndividualDMs,
@@ -43,10 +41,8 @@ export async function POST(request: Request) {
   const results: Record<string, unknown> = { weekId };
 
   try {
-    // Always collect (OKR is optional)
-    const [github, knowledge, contextSync] = await Promise.all([
+    const [github, contextSync] = await Promise.all([
       collectGitHubMetrics(weekId),
-      collectKnowledgeMetrics(weekId),
       collectContextSyncMetrics(weekId),
     ]);
 
@@ -63,18 +59,13 @@ export async function POST(request: Request) {
       };
     }
 
-    // Compute propagation
-    const propagation = computePropagation(github, knowledge, contextSync);
-
     const previousWeekId = getPreviousWeekId(weekId);
     const previousSnapshot = await getSnapshot(previousWeekId);
     const currentSnapshot = assembleSnapshot(
       weekId,
       github,
-      knowledge,
       contextSync,
-      okr,
-      propagation
+      okr
     );
     const delta = computeDelta(currentSnapshot, previousSnapshot);
 
@@ -89,26 +80,16 @@ export async function POST(request: Request) {
         totalOpen: github.totalOpen,
         totalCommits: github.totalCommits,
       },
-      knowledge: {
-        created: knowledge.totalCreated,
-        updated: knowledge.totalUpdated,
-      },
       contextSync: { sessions: contextSync.totalSessions },
       okr: { objectives: okr.objectives.length },
-      propagation: {
-        total: propagation.length,
-        gaps: propagation.filter((p) => p.propagationScore === 0).length,
-      },
       delta,
     };
 
     if (actions.includes("notion")) {
       const pageId = await createWeeklySyncPage(
         github,
-        knowledge,
         contextSync,
         okr,
-        propagation,
         delta
       );
       results.notion = {
@@ -127,7 +108,6 @@ export async function POST(request: Request) {
     if (actions.includes("slack")) {
       await sendChannelSummary(
         github,
-        knowledge,
         contextSync,
         okr,
         delta,
@@ -140,7 +120,6 @@ export async function POST(request: Request) {
       const weekLabel = `${formatDateKST(new Date())} 주차`;
       await sendIndividualDMs(
         github,
-        knowledge,
         contextSync,
         weekLabel,
         notionPageUrl

@@ -179,11 +179,11 @@ export interface WeeklySnapshot {
   weekId: string;
   collectedAt: string;
   github: GitHubMetrics;
-  knowledge: KnowledgeMetrics;
+  knowledge?: KnowledgeMetrics;
   contextSync: ContextSyncMetrics;
   milestones: MemberMilestone[];
   okr: OKRMetrics;
-  propagation: PropagationEntry[];
+  propagation?: PropagationEntry[];
 }
 
 // --- Delta (week-over-week comparison) ---
@@ -191,8 +191,6 @@ export interface WeeklySnapshot {
 export interface WeeklyDelta {
   prsMergedDelta: number;
   prsOpenDelta: number;
-  knowledgeCreatedDelta: number;
-  knowledgeUpdatedDelta: number;
   contextSyncSessionsDelta: number;
   commitsDelta: number;
   avgReviewLatencyDelta: number | null;

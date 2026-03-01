@@ -4,10 +4,8 @@ import type {
   WeeklySnapshot,
   WeeklyDelta,
   GitHubMetrics,
-  KnowledgeMetrics,
   ContextSyncMetrics,
   OKRMetrics,
-  PropagationEntry,
   MemberMilestone,
 } from "../types";
 import { TEAM } from "../config";
@@ -27,10 +25,6 @@ export function computeDelta(
   return {
     prsMergedDelta: current.github.totalMerged - previous.github.totalMerged,
     prsOpenDelta: current.github.totalOpen - previous.github.totalOpen,
-    knowledgeCreatedDelta:
-      current.knowledge.totalCreated - previous.knowledge.totalCreated,
-    knowledgeUpdatedDelta:
-      current.knowledge.totalUpdated - previous.knowledge.totalUpdated,
     contextSyncSessionsDelta:
       current.contextSync.totalSessions - previous.contextSync.totalSessions,
     commitsDelta: current.github.totalCommits - previous.github.totalCommits,
@@ -88,19 +82,15 @@ export function buildMilestones(github: GitHubMetrics): MemberMilestone[] {
 export function assembleSnapshot(
   weekId: string,
   github: GitHubMetrics,
-  knowledge: KnowledgeMetrics,
   contextSync: ContextSyncMetrics,
-  okr: OKRMetrics,
-  propagation: PropagationEntry[]
+  okr: OKRMetrics
 ): WeeklySnapshot {
   return {
     weekId,
     collectedAt: new Date().toISOString(),
     github,
-    knowledge,
     contextSync,
     milestones: buildMilestones(github),
     okr,
-    propagation,
   };
 }

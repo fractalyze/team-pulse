@@ -41,9 +41,6 @@ export const CONTEXT_SYNC_DB = "2ffa84235e5680d2adf2fe3b44eddf32";
 export const OKR_PAGE_ID = "2c9a84235e56807da72bfd015ac8edcc";
 export const WEEKLY_GOAL_PAGE = "71ed54f79d3d46c58ceaa8cf9bc6321b";
 
-// Knowledge graph repo
-export const KNOWLEDGE_REPO = "knowledge-graph";
-
 // Slack
 export const SLACK_CHANNEL = process.env.SLACK_CHANNEL_ID ?? "";
 
