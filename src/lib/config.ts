@@ -37,7 +37,7 @@ export const WEEKLY_GOAL_PAGE = "71ed54f79d3d46c58ceaa8cf9bc6321b";
 export const SLACK_CHANNEL = process.env.SLACK_CHANNEL_ID ?? "";
 
 // Calendar
-export const WEEKLY_SYNC_EVENT_NAME = "Weekly Sync";
+export const WEEKLY_SYNC_EVENT_NAME = "Weekly Compiler Meeting";
 
 // Dashboard
 export const DASHBOARD_URL =
