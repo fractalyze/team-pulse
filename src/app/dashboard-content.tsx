@@ -140,12 +140,14 @@ export function DashboardContent({ summary }: DashboardContentProps) {
             color="yellow"
           />
         </div>
-        <MetricCard
-          title="Action Items"
-          value={`${doneActions}/${totalActions}`}
-          subtitle={`${contextSync.totalSessions} sync sessions`}
-          color={actionItemsColor(doneActions, totalActions)}
-        />
+        <div className="cursor-pointer" onClick={() => toggle("actions")}>
+          <MetricCard
+            title="Action Items"
+            value={`${doneActions}/${totalActions}`}
+            subtitle={`${contextSync.totalSessions} sync sessions`}
+            color={actionItemsColor(doneActions, totalActions)}
+          />
+        </div>
       </div>
 
       {/* Expanded: Merged PRs table */}
@@ -462,6 +464,47 @@ export function DashboardContent({ summary }: DashboardContentProps) {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Expanded: Action Items */}
+      {expandedCard === "actions" && (
+        <div className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
+          <h2 className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">
+            Action Items ({pendingActions} pending / {totalActions} total)
+          </h2>
+          {contextSync.notes.length > 0 ? (
+            <div className="space-y-3">
+              {contextSync.notes
+                .filter((note) => note.actionItems.length > 0)
+                .map((note) => (
+                  <div key={note.id} className="rounded border border-gray-200 p-3 dark:border-gray-700">
+                    <p className="mb-2 text-sm font-medium text-gray-500">
+                      {note.title || note.date}
+                    </p>
+                    <div className="space-y-1">
+                      {note.actionItems.map((item, i) => (
+                        <div key={i} className="flex items-start gap-2 text-sm">
+                          <span className={`mt-0.5 ${item.done ? "text-green-500" : "text-red-400"}`}>
+                            {item.done ? "✓" : "○"}
+                          </span>
+                          <span className={item.done ? "text-gray-400 line-through" : "text-gray-700 dark:text-gray-300"}>
+                            {item.assignee && (
+                              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                                {item.assignee}
+                              </span>
+                            )}{" "}
+                            {item.text}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">No action items this week.</p>
+          )}
         </div>
       )}
 
