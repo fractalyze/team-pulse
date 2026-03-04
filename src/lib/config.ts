@@ -1,16 +1,8 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
-import type { TeamMember, RepoOKRMapping } from "./types";
+import type { RepoOKRMapping } from "./types";
 
 export const ORG = "fractalyze";
-
-export const TEAM: TeamMember[] = [
-  { name: "Ryan", github: "TBD", slack: "TBD" },
-  { name: "Soowon", github: "TBD", slack: "TBD" },
-  { name: "Baz", github: "TBD", slack: "TBD" },
-  { name: "Jun", github: "TBD", slack: "TBD" },
-  { name: "Jooman", github: "TBD", slack: "U09S3DQT1P0" },
-];
 
 export const MONITORED_REPOS = [
   "zkx",

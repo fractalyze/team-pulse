@@ -11,6 +11,7 @@ import {
 import { computeDelta } from "@/lib/generators/metrics";
 import { getSnapshot, saveSnapshot } from "@/lib/store/kv";
 import { getWeekId, getPreviousWeekId, formatDateKST } from "@/lib/week";
+import { getTeam } from "@/lib/team";
 
 export const maxDuration = 60;
 
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
     const weekId = getWeekId();
     console.log(`Running weekly pulse for ${weekId}`);
 
+    const team = await getTeam();
+
     // Step 2: Read snapshot from Redis (saved by daily-collect)
     let currentSnapshot = await getSnapshot(weekId);
     if (!currentSnapshot) {
@@ -76,7 +79,8 @@ export async function GET(request: Request) {
         currentSnapshot.github,
         currentSnapshot.contextSync,
         okr,
-        delta
+        delta,
+        team
       );
     } catch (error) {
       console.error("Failed to create Notion page:", error);
@@ -105,7 +109,8 @@ export async function GET(request: Request) {
         currentSnapshot.github,
         currentSnapshot.contextSync,
         weekLabel,
-        notionPageUrl
+        notionPageUrl,
+        team
       );
     } catch (error) {
       console.error("Failed to send Slack DMs:", error);

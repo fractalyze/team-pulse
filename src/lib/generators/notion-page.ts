@@ -1,7 +1,8 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { Client } from "@notionhq/client";
-import { CONTEXT_SYNC_DB, DASHBOARD_URL, TEAM } from "../config";
+import { CONTEXT_SYNC_DB, DASHBOARD_URL } from "../config";
+import type { TeamMember } from "../types";
 import { formatDateKST, getWeekId } from "../week";
 import type {
   GitHubMetrics,
@@ -166,11 +167,12 @@ function buildOKRSection(
 /** Build milestone section (Section 3). */
 function buildMilestoneSection(
   github: GitHubMetrics,
-  reviewHealth: ReviewHealthMetrics
+  reviewHealth: ReviewHealthMetrics,
+  team: TeamMember[]
 ): BlockObjectRequest[] {
   const blocks: BlockObjectRequest[] = [];
 
-  for (const member of TEAM) {
+  for (const member of team) {
     blocks.push(heading3(member.name));
     blocks.push(bulletItem("next week → [수동 입력]"));
 
@@ -373,7 +375,8 @@ export async function createWeeklySyncPage(
   github: GitHubMetrics,
   contextSync: ContextSyncMetrics,
   okr: OKRMetrics,
-  delta: WeeklyDelta | null
+  delta: WeeklyDelta | null,
+  team: TeamMember[] = []
 ): Promise<string> {
   const notion = getNotionClient();
   const today = new Date();
@@ -411,7 +414,7 @@ export async function createWeeklySyncPage(
   // 3. Milestone sharing (per-member)
   blocks.push(heading2("3. Milestone sharing"));
   blocks.push(divider());
-  blocks.push(...buildMilestoneSection(github, github.reviewHealth));
+  blocks.push(...buildMilestoneSection(github, github.reviewHealth, team));
 
   // 4. Retro
   blocks.push(heading2("4. Retro."));

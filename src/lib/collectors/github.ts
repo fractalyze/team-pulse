@@ -1,7 +1,8 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { Octokit } from "@octokit/rest";
-import { ORG, MONITORED_REPOS, OKR_REPO_MAP, TEAM } from "../config";
+import { ORG, MONITORED_REPOS, OKR_REPO_MAP } from "../config";
+import type { TeamMember } from "../types";
 import { getWeekRange } from "../week";
 import type {
   PRInfo,
@@ -316,7 +317,8 @@ function computeReviewHealth(
 
 /** Collect GitHub PR metrics for a given week. */
 export async function collectGitHubMetrics(
-  weekId: string
+  weekId: string,
+  team: TeamMember[] = []
 ): Promise<GitHubMetrics> {
   const octokit = getOctokit();
   const { start, end } = getWeekRange(weekId);
@@ -333,10 +335,8 @@ export async function collectGitHubMetrics(
   const allMergedPRs: PRInfo[] = [];
 
   // Initialize team members
-  for (const member of TEAM) {
-    if (member.github !== "TBD") {
-      byAuthor[member.github] = { merged: 0, open: 0 };
-    }
+  for (const member of team) {
+    byAuthor[member.github] = { merged: 0, open: 0 };
   }
 
   for (const repo of MONITORED_REPOS) {

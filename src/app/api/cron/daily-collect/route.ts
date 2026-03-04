@@ -6,6 +6,7 @@ import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { assembleSnapshot } from "@/lib/generators/metrics";
 import { saveSnapshot } from "@/lib/store/kv";
 import { getWeekId } from "@/lib/week";
+import { getTeam } from "@/lib/team";
 
 export const maxDuration = 60;
 
@@ -19,8 +20,10 @@ export async function GET(request: Request) {
     const weekId = getWeekId();
     console.log(`Running daily collect for ${weekId}`);
 
+    const team = await getTeam();
+
     const [github, contextSync] = await Promise.all([
-      collectGitHubMetrics(weekId),
+      collectGitHubMetrics(weekId, team),
       collectContextSyncMetrics(weekId),
     ]);
 
@@ -30,7 +33,7 @@ export async function GET(request: Request) {
       objectives: [],
       thisWeekGoal: null,
       nextHardDeadline: null,
-    });
+    }, team);
     await saveSnapshot(snapshot);
 
     return NextResponse.json({

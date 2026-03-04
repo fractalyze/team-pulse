@@ -7,8 +7,8 @@ import type {
   ContextSyncMetrics,
   OKRMetrics,
   MemberMilestone,
+  TeamMember,
 } from "../types";
-import { TEAM } from "../config";
 
 /** Compute week-over-week delta between current and previous snapshots. */
 export function computeDelta(
@@ -39,17 +39,16 @@ export function computeDelta(
 }
 
 /** Build member milestones from GitHub data. */
-export function buildMilestones(github: GitHubMetrics): MemberMilestone[] {
-  return TEAM.map((member) => {
+export function buildMilestones(
+  github: GitHubMetrics,
+  team: TeamMember[]
+): MemberMilestone[] {
+  return team.map((member) => {
     const mergedPRs = github.repos.flatMap((r) =>
-      r.merged.filter(
-        (pr) => member.github !== "TBD" && pr.author === member.github
-      )
+      r.merged.filter((pr) => pr.author === member.github)
     );
     const openPRs = github.repos.flatMap((r) =>
-      r.open.filter(
-        (pr) => member.github !== "TBD" && pr.author === member.github
-      )
+      r.open.filter((pr) => pr.author === member.github)
     );
 
     const achieved = mergedPRs.map(
@@ -83,14 +82,15 @@ export function assembleSnapshot(
   weekId: string,
   github: GitHubMetrics,
   contextSync: ContextSyncMetrics,
-  okr: OKRMetrics
+  okr: OKRMetrics,
+  team: TeamMember[] = []
 ): WeeklySnapshot {
   return {
     weekId,
     collectedAt: new Date().toISOString(),
     github,
     contextSync,
-    milestones: buildMilestones(github),
+    milestones: buildMilestones(github, team),
     okr,
   };
 }

@@ -1,7 +1,8 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { WebClient } from "@slack/web-api";
-import { TEAM, SLACK_CHANNEL, DASHBOARD_URL } from "../config";
+import { SLACK_CHANNEL, DASHBOARD_URL } from "../config";
+import type { TeamMember } from "../types";
 import { formatDateKST } from "../week";
 import type {
   GitHubMetrics,
@@ -165,21 +166,19 @@ export function buildChannelSummary(
 
 /** Build individual DM with YOUR WEEK + PREP structure. */
 export function buildIndividualDM(
-  memberName: string,
+  member: TeamMember,
   github: GitHubMetrics,
   contextSync: ContextSyncMetrics,
   weekLabel: string,
   notionPageUrl: string | null
 ): Block[] {
-  const member = TEAM.find((m) => m.name === memberName);
-  if (!member) return [];
-
+  const memberName = member.name;
   const blocks: Block[] = [];
   blocks.push(header(`🔔 [${memberName}] Prep - ${weekLabel}`));
   blocks.push(dividerBlock());
 
   // YOUR WEEK summary
-  if (member.github !== "TBD") {
+  {
     const mergedPRs = github.repos.flatMap((r) =>
       r.merged.filter((pr) => pr.author === member.github)
     );
@@ -284,16 +283,17 @@ export async function sendIndividualDMs(
   github: GitHubMetrics,
   contextSync: ContextSyncMetrics,
   weekLabel: string,
-  notionPageUrl: string | null
+  notionPageUrl: string | null,
+  team: TeamMember[] = []
 ): Promise<void> {
   const client = getSlackClient();
 
-  for (const member of TEAM) {
+  for (const member of team) {
     if (member.slack === "TBD") continue;
 
     try {
       const blocks = buildIndividualDM(
-        member.name,
+        member,
         github,
         contextSync,
         weekLabel,
