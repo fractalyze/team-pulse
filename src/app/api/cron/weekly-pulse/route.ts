@@ -2,14 +2,13 @@
 
 import { NextResponse } from "next/server";
 import { hasWeeklySyncToday } from "@/lib/collectors/gcal";
-import { collectOKRMetrics } from "@/lib/collectors/okr";
 import { createWeeklySyncPage } from "@/lib/generators/notion-page";
 import {
   sendChannelSummary,
   sendIndividualDMs,
 } from "@/lib/generators/slack-msg";
 import { computeDelta } from "@/lib/generators/metrics";
-import { getSnapshot, saveSnapshot } from "@/lib/store/kv";
+import { getSnapshot } from "@/lib/store/kv";
 import { getWeekId, getPreviousWeekId, formatDateKST } from "@/lib/week";
 import { getTeam } from "@/lib/team";
 
@@ -56,23 +55,19 @@ export async function GET(request: Request) {
       });
     }
 
-    // Step 3: Collect OKR (not in daily-collect)
-    let okr = currentSnapshot.okr;
-    try {
-      okr = await collectOKRMetrics(weekId);
-      // Update snapshot with fresh OKR data
-      currentSnapshot = { ...currentSnapshot, okr };
-      await saveSnapshot(currentSnapshot);
-    } catch (error) {
-      console.warn("OKR collection failed, using existing data:", error);
-    }
+    const okr = currentSnapshot.okr ?? {
+      weekId,
+      objectives: [],
+      thisWeekGoal: null,
+      nextHardDeadline: null,
+    };
 
-    // Step 4: Compute delta
+    // Step 3: Compute delta
     const previousWeekId = getPreviousWeekId(weekId);
     const previousSnapshot = await getSnapshot(previousWeekId);
     const delta = computeDelta(currentSnapshot, previousSnapshot);
 
-    // Step 5: Create Notion meeting note
+    // Step 4: Create Notion meeting note
     let notionPageId: string | null = null;
     try {
       notionPageId = await createWeeklySyncPage(
@@ -90,7 +85,7 @@ export async function GET(request: Request) {
       ? `https://notion.so/${notionPageId.replace(/-/g, "")}`
       : null;
 
-    // Step 6: Send Slack messages
+    // Step 5: Send Slack messages
     try {
       await sendChannelSummary(
         currentSnapshot.github,
