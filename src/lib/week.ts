@@ -67,6 +67,22 @@ export function getWeekRange(weekId: string): { start: Date; end: Date } {
   return { start, end };
 }
 
+/** Convert a week ID to its month (e.g. "2026-W10" → "2026-03"). */
+export function weekIdToMonth(weekId: string): string {
+  const { start } = getWeekRange(weekId);
+  const year = start.getUTCFullYear();
+  const month = start.getUTCMonth() + 1;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/** Convert a week ID to its half-year (e.g. "2026-W10" → "2026-H1"). */
+export function weekIdToHalf(weekId: string): string {
+  const { start } = getWeekRange(weekId);
+  const year = start.getUTCFullYear();
+  const half = start.getUTCMonth() < 6 ? "H1" : "H2";
+  return `${year}-${half}`;
+}
+
 /** Format a date as "M/D(요일)" in KST. */
 export function formatDateKST(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;

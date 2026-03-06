@@ -126,6 +126,39 @@ export interface ContextSyncMetrics {
   pendingActionItems: number;
 }
 
+// --- Goal System (3-Tier) ---
+
+export type GoalStatus = "not_started" | "in_progress" | "done";
+
+export interface HalfYearObjective {
+  id: string;
+  period: string;
+  title: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MonthlyGoal {
+  id: string;
+  month: string;
+  title: string;
+  status: GoalStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WeeklyTask {
+  id: string;
+  weekId: string;
+  assignee: string;
+  content: string;
+  deadline: string;
+  status: GoalStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // --- OKR Data ---
 
 export interface OKRStatus {
@@ -182,7 +215,7 @@ export interface WeeklySnapshot {
   knowledge?: KnowledgeMetrics;
   contextSync: ContextSyncMetrics;
   milestones: MemberMilestone[];
-  okr: OKRMetrics;
+  okr?: OKRMetrics;
   propagation?: PropagationEntry[];
 }
 
