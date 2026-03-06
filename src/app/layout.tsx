@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { SessionProvider } from "@/components/session-provider";
 import { UserMenu } from "@/components/user-menu";
+import { auth } from "@/auth";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -22,11 +23,14 @@ export const metadata: Metadata = {
   description: "Weekly meeting automation & metrics dashboard",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+  const isAdmin = session?.user?.orgRole === "admin";
+
   return (
     <html lang="ko">
       <body
@@ -54,6 +58,14 @@ export default function RootLayout({
                 >
                   Trends
                 </Link>
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                  >
+                    Admin
+                  </Link>
+                )}
                 <UserMenu />
               </div>
             </div>

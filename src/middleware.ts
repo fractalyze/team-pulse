@@ -8,6 +8,14 @@ export default auth((req) => {
     const loginUrl = new URL("/login", req.url);
     return NextResponse.redirect(loginUrl);
   }
+
+  if (
+    req.nextUrl.pathname.startsWith("/admin") &&
+    req.auth.user.orgRole !== "admin"
+  ) {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
   return NextResponse.next();
 });
 
