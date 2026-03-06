@@ -1,7 +1,8 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
-import Link from "next/link";
+import { Suspense } from "react";
 import { getDashboardSummary } from "@/lib/store/kv";
+import { GoalProgressServer } from "@/components/goals/goal-progress-server";
 import { DashboardContent } from "./dashboard-content";
 import { WeekNav } from "./week-nav";
 
@@ -35,6 +36,9 @@ export default async function Home() {
   return (
     <div className="space-y-6">
       <WeekNav summary={summary} />
+      <Suspense>
+        <GoalProgressServer weekId={summary.current.weekId} />
+      </Suspense>
       <DashboardContent summary={summary} />
 
       {/* Member milestones */}
