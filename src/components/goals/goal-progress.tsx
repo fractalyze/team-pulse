@@ -31,10 +31,12 @@ const STATUS_LABEL: Record<GoalStatus, string> = {
   not_started: "not started",
 };
 
-const BORDER_COLOR: Record<GoalStatus, string> = {
-  done: "border-l-green-500",
-  in_progress: "border-l-blue-500",
-  not_started: "border-l-gray-400",
+const CHIP_BG: Record<GoalStatus, string> = {
+  done: "bg-green-50 text-green-700 dark:bg-green-500/20 dark:text-green-300",
+  in_progress:
+    "bg-blue-50 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
+  not_started:
+    "bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400",
 };
 
 const ICON_COLOR: Record<GoalStatus, string> = {
@@ -42,6 +44,56 @@ const ICON_COLOR: Record<GoalStatus, string> = {
   in_progress: "text-blue-500",
   not_started: "text-gray-400",
 };
+
+const PROGRESS_RING_SIZE = 80;
+const PROGRESS_RING_STROKE = 6;
+const PROGRESS_RING_RADIUS = (PROGRESS_RING_SIZE - PROGRESS_RING_STROKE) / 2;
+const PROGRESS_RING_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RING_RADIUS;
+
+function ProgressRing({ percent }: { percent: number }) {
+  const offset =
+    PROGRESS_RING_CIRCUMFERENCE - (percent / 100) * PROGRESS_RING_CIRCUMFERENCE;
+
+  return (
+    <div className="relative">
+      <svg
+        width={PROGRESS_RING_SIZE}
+        height={PROGRESS_RING_SIZE}
+        className="-rotate-90"
+      >
+        <circle
+          cx={PROGRESS_RING_SIZE / 2}
+          cy={PROGRESS_RING_SIZE / 2}
+          r={PROGRESS_RING_RADIUS}
+          fill="none"
+          className="stroke-gray-200 dark:stroke-gray-700"
+          strokeWidth={PROGRESS_RING_STROKE}
+        />
+        <circle
+          cx={PROGRESS_RING_SIZE / 2}
+          cy={PROGRESS_RING_SIZE / 2}
+          r={PROGRESS_RING_RADIUS}
+          fill="none"
+          stroke="url(#progressGradient)"
+          strokeWidth={PROGRESS_RING_STROKE}
+          strokeLinecap="round"
+          strokeDasharray={PROGRESS_RING_CIRCUMFERENCE}
+          strokeDashoffset={offset}
+          className="transition-all duration-700"
+        />
+        <defs>
+          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#3b82f6" />
+            <stop offset="100%" stopColor="#a855f7" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-gray-900 dark:text-white">
+        {percent}%
+      </span>
+    </div>
+  );
+}
 
 export function GoalProgress({
   halfYear,
@@ -56,6 +108,8 @@ export function GoalProgress({
   const weekDone = weeklyTasks.filter((t) => t.status === "done").length;
   const weekTotal = weeklyTasks.length;
   const monthDone = monthlyGoals.filter((g) => g.status === "done").length;
+  const weekPct =
+    weekTotal > 0 ? Math.round((weekDone / weekTotal) * 100) : 0;
 
   const halfPct =
     allMonthlyTotal > 0
@@ -75,68 +129,114 @@ export function GoalProgress({
     ? `${parseInt(month.split("-")[1], 10)}월`
     : "";
 
+  // Empty state
+  if (!halfYear && monthlyGoals.length === 0 && weeklyTasks.length === 0) {
+    return (
+      <div className="rounded-xl bg-white p-6 text-center shadow-lg dark:bg-gray-900">
+        <p className="text-sm text-gray-400">
+          No goals set. Add them in Admin.
+        </p>
+      </div>
+    );
+  }
+
+  // Collapsed
   if (collapsed) {
     return (
       <button
         onClick={() => setCollapsed(false)}
-        className="w-full rounded-lg bg-white p-3 text-left shadow-sm dark:bg-gray-900"
+        className="w-full rounded-xl bg-white px-5 py-3 text-left shadow-lg transition-shadow hover:shadow-xl dark:bg-gray-900"
       >
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium text-gray-900 dark:text-white">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-gray-900 dark:text-white">
             {halfYear
               ? `${halfYear.period}: ${halfYear.title}`
               : "Goals"}
           </span>
-          <span className="text-gray-500">
-            {monthLabel} {monthDone}/{monthlyGoals.length} | Week{" "}
-            {weekDone}/{weekTotal}
-          </span>
+          <div className="flex items-center gap-3 text-sm text-gray-500">
+            <span>
+              {monthLabel} {monthDone}/{monthlyGoals.length}
+            </span>
+            <span>
+              Week {weekDone}/{weekTotal}
+            </span>
+            <span className="text-lg font-bold text-gray-900 dark:text-white">
+              {halfPct}%
+            </span>
+          </div>
         </div>
       </button>
     );
   }
 
   return (
-    <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
-      {/* Header with collapse button */}
+    <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-gray-900">
+      {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(true)}
-        className="w-full border-b border-gray-100 px-4 py-2 text-right text-xs text-gray-400 hover:text-gray-600 dark:border-gray-800"
+        className="w-full px-5 py-1.5 text-right text-xs text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400"
       >
         Collapse
       </button>
 
-      {/* Half-year progress */}
-      {halfYear && (
-        <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-gray-900 dark:text-white">
-              {halfYear.period}: {halfYear.title}
-            </span>
-            <span className="text-sm text-gray-500">
-              {allMonthlyDone}/{allMonthlyTotal} ({halfPct}%)
-            </span>
+      {/* Hero header */}
+      <div className="px-6 pb-5">
+        {halfYear ? (
+          <div className="flex items-start justify-between gap-6">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-blue-500">
+                {halfYear.period}
+              </p>
+              <h2 className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
+                {halfYear.title}
+              </h2>
+              {halfYear.description && (
+                <p className="mt-1 text-sm text-gray-500">
+                  {halfYear.description}
+                </p>
+              )}
+              <div className="mt-3 flex items-center gap-4 text-sm text-gray-500">
+                <span>
+                  {allMonthlyDone}/{allMonthlyTotal} goals done
+                </span>
+                <span>|</span>
+                <span>
+                  Week {weekDone}/{weekTotal} ({weekPct}%)
+                </span>
+              </div>
+            </div>
+            <ProgressRing percent={halfPct} />
           </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+        ) : (
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Goals
+            </h2>
+            <div className="text-sm text-gray-500">
+              Week {weekDone}/{weekTotal}
+            </div>
+          </div>
+        )}
+
+        {/* Full-width progress bar */}
+        {allMonthlyTotal > 0 && (
+          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all"
+              className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-700"
               style={{ width: `${halfPct}%` }}
             />
           </div>
-          {halfYear.description && (
-            <p className="mt-1 text-xs text-gray-500">{halfYear.description}</p>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Monthly goals */}
       {monthlyGoals.length > 0 && (
-        <div className="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
-          <div className="mb-2 flex items-center justify-between">
+        <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
+          <div className="mb-2.5 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               {monthLabel} Goals
             </span>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-400">
               {monthDone}/{monthlyGoals.length} done
             </span>
           </div>
@@ -144,17 +244,11 @@ export function GoalProgress({
             {monthlyGoals.map((goal) => (
               <div
                 key={goal.id}
-                className={`rounded border-l-4 bg-gray-50 px-3 py-2 dark:bg-gray-800 ${BORDER_COLOR[goal.status]}`}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${CHIP_BG[goal.status]}`}
               >
-                <div className="flex items-center gap-1.5">
-                  <span className={`${ICON_COLOR[goal.status]}`}>
-                    {STATUS_ICON[goal.status]}
-                  </span>
-                  <span className="text-sm text-gray-900 dark:text-white">
-                    {goal.title}
-                  </span>
-                </div>
-                <span className="text-xs text-gray-500">
+                <span>{STATUS_ICON[goal.status]}</span>
+                <span>{goal.title}</span>
+                <span className="ml-0.5 text-xs opacity-60">
                   {STATUS_LABEL[goal.status]}
                 </span>
               </div>
@@ -165,54 +259,58 @@ export function GoalProgress({
 
       {/* Weekly tasks by assignee */}
       {weeklyTasks.length > 0 && (
-        <div className="px-4 py-3">
-          <div className="mb-2 flex items-center justify-between">
+        <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
+          <div className="mb-2.5 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Weekly Tasks
             </span>
-            <span className="text-xs text-gray-500">
-              Team: {weekDone}/{weekTotal}{" "}
-              {weekTotal > 0
-                ? `${Math.round((weekDone / weekTotal) * 100)}%`
-                : ""}
+            <span className="text-xs text-gray-400">
+              {weekDone}/{weekTotal}{" "}
+              {weekPct > 0 && `${weekPct}%`}
             </span>
           </div>
-          <div className="space-y-1.5">
-            {[...byAssignee.entries()].map(([assignee, memberTasks]) => (
-              <div key={assignee} className="flex items-start gap-2">
-                <span className="w-20 shrink-0 text-sm font-medium text-gray-900 dark:text-white">
-                  {assignee}
-                </span>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                  {memberTasks.map((task) => (
-                    <span
-                      key={task.id}
-                      className="flex items-center gap-1 text-sm"
-                    >
-                      <span className={ICON_COLOR[task.status]}>
-                        {STATUS_ICON[task.status]}
-                      </span>
-                      <span className="text-gray-700 dark:text-gray-300">
-                        {task.content}
-                      </span>
-                      {task.deadline && (
-                        <span className="rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
-                          {task.deadline.slice(5)}
-                        </span>
-                      )}
+          <div className="space-y-2">
+            {[...byAssignee.entries()].map(([assignee, memberTasks]) => {
+              const memberDone = memberTasks.filter(
+                (t) => t.status === "done"
+              ).length;
+              return (
+                <div key={assignee} className="flex items-start gap-3">
+                  <div className="flex w-20 shrink-0 items-center gap-1.5">
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                      {assignee.charAt(0).toUpperCase()}
                     </span>
-                  ))}
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {assignee}
+                    </span>
+                  </div>
+                  <div className="flex flex-1 flex-wrap gap-x-3 gap-y-1">
+                    {memberTasks.map((task) => (
+                      <span
+                        key={task.id}
+                        className="flex items-center gap-1 text-sm"
+                      >
+                        <span className={ICON_COLOR[task.status]}>
+                          {STATUS_ICON[task.status]}
+                        </span>
+                        <span className="text-gray-700 dark:text-gray-300">
+                          {task.content}
+                        </span>
+                        {task.deadline && (
+                          <span className="rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
+                            {task.deadline.slice(5)}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                  <span className="shrink-0 text-xs text-gray-400">
+                    {memberDone}/{memberTasks.length}
+                  </span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!halfYear && monthlyGoals.length === 0 && weeklyTasks.length === 0 && (
-        <div className="px-4 py-3 text-center text-sm text-gray-400">
-          No goals set. Add them in Admin.
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { getDashboardSummary } from "@/lib/store/kv";
 import { GoalProgressServer } from "@/components/goals/goal-progress-server";
+import { GoalProgressSkeleton } from "@/components/goals/goal-progress-skeleton";
 import { DashboardContent } from "../../dashboard-content";
 import { WeekNav } from "../../week-nav";
 
@@ -34,7 +35,7 @@ export default async function WeekPage({ params }: WeekPageProps) {
   return (
     <div className="space-y-6">
       <WeekNav summary={summary} />
-      <Suspense>
+      <Suspense fallback={<GoalProgressSkeleton />}>
         <GoalProgressServer weekId={id} />
       </Suspense>
       <DashboardContent summary={summary} />
