@@ -17,18 +17,20 @@ export function GoalProgressSkeleton() {
       {/* Progress bar */}
       <div className="mt-5 h-2 rounded-full bg-gray-200 dark:bg-gray-700" />
 
-      {/* Monthly goals row */}
-      <div className="mt-5 flex gap-2">
-        <div className="h-8 w-28 rounded-full bg-gray-200 dark:bg-gray-700" />
-        <div className="h-8 w-32 rounded-full bg-gray-200 dark:bg-gray-700" />
-        <div className="h-8 w-24 rounded-full bg-gray-200 dark:bg-gray-700" />
+      {/* Goal card skeletons */}
+      <div className="mt-5 space-y-3">
+        <div className="h-20 rounded-lg bg-gray-200 dark:bg-gray-700" />
+        <div className="h-16 rounded-lg bg-gray-200 dark:bg-gray-700" />
       </div>
 
-      {/* Weekly tasks */}
-      <div className="mt-5 space-y-2">
-        <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-700" />
-        <div className="h-4 w-full rounded bg-gray-200 dark:bg-gray-700" />
-        <div className="h-4 w-3/4 rounded bg-gray-200 dark:bg-gray-700" />
+      {/* Mini trend skeleton */}
+      <div className="mt-5 flex gap-1">
+        {[...Array(4)].map((_, i) => (
+          <div
+            key={i}
+            className="h-8 flex-1 rounded bg-gray-200 dark:bg-gray-700"
+          />
+        ))}
       </div>
     </div>
   );

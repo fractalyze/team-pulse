@@ -6,7 +6,11 @@ import {
   getWeeklyTasks,
   getAllHalfYearPeriods,
 } from "@/lib/store/goals";
-import { weekIdToMonth, weekIdToHalf } from "@/lib/week";
+import {
+  weekIdToMonth,
+  weekIdToHalf,
+  getWeekIdsForMonth,
+} from "@/lib/week";
 import { GoalProgress } from "./goal-progress";
 
 interface GoalProgressServerProps {
@@ -16,11 +20,12 @@ interface GoalProgressServerProps {
 export async function GoalProgressServer({ weekId }: GoalProgressServerProps) {
   const month = weekIdToMonth(weekId);
   const half = weekIdToHalf(weekId);
+  const monthWeekIds = getWeekIdsForMonth(month);
 
-  const [halfYear, monthlyGoals, weeklyTasks] = await Promise.all([
+  const [halfYear, monthlyGoals, ...weekTaskArrays] = await Promise.all([
     getHalfYearObjective(half),
     getMonthlyGoals(month),
-    getWeeklyTasks(weekId),
+    ...monthWeekIds.map((wId) => getWeeklyTasks(wId)),
   ]);
 
   // Calculate all monthly goals in this half for progress bar
@@ -36,20 +41,40 @@ export async function GoalProgressServer({ weekId }: GoalProgressServerProps) {
   if (allPeriods.includes(half)) {
     for (let m = startMonth; m <= endMonth; m++) {
       const monthKey = `${year}-${String(m).padStart(2, "0")}`;
-      const goals = monthKey === month ? monthlyGoals : await getMonthlyGoals(monthKey);
+      const goals =
+        monthKey === month ? monthlyGoals : await getMonthlyGoals(monthKey);
       allMonthlyTotal += goals.length;
       allMonthlyDone += goals.filter((g) => g.status === "done").length;
     }
   }
 
+  // Weekly achievement trend for the month
+  const achievementTrend = monthWeekIds
+    .map((wId, i) => {
+      const tasks = weekTaskArrays[i];
+      const done = tasks.filter((t) => t.status === "done").length;
+      return {
+        weekId: wId,
+        label: wId.replace(/^\d{4}-/, ""),
+        rate: tasks.length > 0 ? Math.round((done / tasks.length) * 100) : -1,
+      };
+    })
+    .filter((d) => d.rate >= 0);
+
+  // All tasks across the month (for goal linking)
+  const allMonthTasks = weekTaskArrays.flat();
+
   return (
     <GoalProgress
       halfYear={halfYear}
       monthlyGoals={monthlyGoals}
-      weeklyTasks={weeklyTasks}
+      weeklyTasks={allMonthTasks.filter((t) => t.weekId === weekId)}
       month={month}
       allMonthlyDone={allMonthlyDone}
       allMonthlyTotal={allMonthlyTotal}
+      allMonthTasks={allMonthTasks}
+      currentWeekId={weekId}
+      achievementTrend={achievementTrend}
     />
   );
 }

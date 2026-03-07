@@ -2,13 +2,20 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type {
   GoalStatus,
   HalfYearObjective,
   MonthlyGoal,
   WeeklyTask,
 } from "@/lib/types";
+import { MiniAchievementBars } from "@/components/charts/achievement-mini";
+
+interface AchievementPoint {
+  weekId: string;
+  label: string;
+  rate: number;
+}
 
 interface GoalProgressProps {
   halfYear: HalfYearObjective | null;
@@ -17,6 +24,9 @@ interface GoalProgressProps {
   month: string;
   allMonthlyDone: number;
   allMonthlyTotal: number;
+  allMonthTasks: WeeklyTask[];
+  currentWeekId: string;
+  achievementTrend: AchievementPoint[];
 }
 
 const STATUS_ICON: Record<GoalStatus, string> = {
@@ -25,24 +35,22 @@ const STATUS_ICON: Record<GoalStatus, string> = {
   not_started: "\u25CB",
 };
 
-const STATUS_LABEL: Record<GoalStatus, string> = {
-  done: "done",
-  in_progress: "in progress",
-  not_started: "not started",
-};
-
-const CHIP_BG: Record<GoalStatus, string> = {
-  done: "bg-green-50 text-green-700 dark:bg-green-500/20 dark:text-green-300",
-  in_progress:
-    "bg-blue-50 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300",
-  not_started:
-    "bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400",
-};
-
 const ICON_COLOR: Record<GoalStatus, string> = {
   done: "text-green-500",
   in_progress: "text-blue-500",
   not_started: "text-gray-400",
+};
+
+const GOAL_CARD_BORDER: Record<GoalStatus, string> = {
+  done: "border-green-200 dark:border-green-800",
+  in_progress: "border-blue-200 dark:border-blue-800",
+  not_started: "border-gray-200 dark:border-gray-700",
+};
+
+const GOAL_CARD_BG: Record<GoalStatus, string> = {
+  done: "bg-green-50/50 dark:bg-green-950/30",
+  in_progress: "bg-blue-50/50 dark:bg-blue-950/30",
+  not_started: "bg-gray-50/50 dark:bg-gray-800/30",
 };
 
 const PROGRESS_RING_SIZE = 80;
@@ -52,7 +60,8 @@ const PROGRESS_RING_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RING_RADIUS;
 
 function ProgressRing({ percent }: { percent: number }) {
   const offset =
-    PROGRESS_RING_CIRCUMFERENCE - (percent / 100) * PROGRESS_RING_CIRCUMFERENCE;
+    PROGRESS_RING_CIRCUMFERENCE -
+    (percent / 100) * PROGRESS_RING_CIRCUMFERENCE;
 
   return (
     <div className="relative">
@@ -82,7 +91,13 @@ function ProgressRing({ percent }: { percent: number }) {
           className="transition-all duration-700"
         />
         <defs>
-          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient
+            id="progressGradient"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="0%"
+          >
             <stop offset="0%" stopColor="#3b82f6" />
             <stop offset="100%" stopColor="#a855f7" />
           </linearGradient>
@@ -95,6 +110,13 @@ function ProgressRing({ percent }: { percent: number }) {
   );
 }
 
+function goalStatus(tasks: WeeklyTask[]): GoalStatus {
+  if (tasks.length === 0) return "not_started";
+  if (tasks.every((t) => t.status === "done")) return "done";
+  if (tasks.some((t) => t.status !== "not_started")) return "in_progress";
+  return "not_started";
+}
+
 export function GoalProgress({
   halfYear,
   monthlyGoals,
@@ -102,6 +124,9 @@ export function GoalProgress({
   month,
   allMonthlyDone,
   allMonthlyTotal,
+  allMonthTasks,
+  currentWeekId,
+  achievementTrend,
 }: GoalProgressProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -116,18 +141,26 @@ export function GoalProgress({
       ? Math.round((allMonthlyDone / allMonthlyTotal) * 100)
       : 0;
 
-  // Group weekly tasks by assignee
-  const byAssignee = new Map<string, WeeklyTask[]>();
-  for (const task of weeklyTasks) {
-    if (!byAssignee.has(task.assignee)) {
-      byAssignee.set(task.assignee, []);
-    }
-    byAssignee.get(task.assignee)!.push(task);
-  }
-
   const monthLabel = month
     ? `${parseInt(month.split("-")[1], 10)}월`
     : "";
+
+  // Group all month tasks by goalId
+  const { goalTaskMap, otherTasks } = useMemo(() => {
+    const goalMap = new Map<string, WeeklyTask[]>();
+    const other: WeeklyTask[] = [];
+
+    for (const task of allMonthTasks) {
+      if (task.goalId) {
+        if (!goalMap.has(task.goalId)) goalMap.set(task.goalId, []);
+        goalMap.get(task.goalId)!.push(task);
+      } else {
+        other.push(task);
+      }
+    }
+
+    return { goalTaskMap: goalMap, otherTasks: other };
+  }, [allMonthTasks]);
 
   // Empty state
   if (!halfYear && monthlyGoals.length === 0 && weeklyTasks.length === 0) {
@@ -168,6 +201,8 @@ export function GoalProgress({
       </button>
     );
   }
+
+  const otherDone = otherTasks.filter((t) => t.status === "done").length;
 
   return (
     <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-gray-900">
@@ -229,10 +264,10 @@ export function GoalProgress({
         )}
       </div>
 
-      {/* Monthly goals */}
+      {/* Monthly goals as cards with linked tasks */}
       {monthlyGoals.length > 0 && (
         <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
-          <div className="mb-2.5 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               {monthLabel} Goals
             </span>
@@ -240,77 +275,120 @@ export function GoalProgress({
               {monthDone}/{monthlyGoals.length} done
             </span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {monthlyGoals.map((goal) => (
-              <div
-                key={goal.id}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${CHIP_BG[goal.status]}`}
+          <div className="space-y-2.5">
+            {monthlyGoals.map((goal) => {
+              const linkedTasks = goalTaskMap.get(goal.id) ?? [];
+              const linkedDone = linkedTasks.filter(
+                (t) => t.status === "done"
+              ).length;
+              const taskProgress =
+                linkedTasks.length > 0 ? goalStatus(linkedTasks) : goal.status;
+
+              return (
+                <div
+                  key={goal.id}
+                  className={`rounded-lg border px-4 py-3 ${GOAL_CARD_BORDER[goal.status]} ${GOAL_CARD_BG[goal.status]}`}
+                >
+                  {/* Goal header */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-base ${ICON_COLOR[goal.status]}`}>
+                        {STATUS_ICON[goal.status]}
+                      </span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {goal.title}
+                      </span>
+                    </div>
+                    {linkedTasks.length > 0 && (
+                      <span className="text-xs text-gray-400">
+                        {linkedDone}/{linkedTasks.length} done
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Linked tasks */}
+                  {linkedTasks.length > 0 && (
+                    <div className="mt-2 space-y-1 pl-6">
+                      {linkedTasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <span className={ICON_COLOR[task.status]}>
+                            {STATUS_ICON[task.status]}
+                          </span>
+                          <span className="text-gray-700 dark:text-gray-300">
+                            {task.content}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            ({task.assignee})
+                          </span>
+                          {task.deadline && (
+                            <span className="rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
+                              {task.deadline.slice(5)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No linked tasks indicator */}
+                  {linkedTasks.length === 0 && (
+                    <p className="mt-1 pl-6 text-xs text-gray-400">
+                      no linked tasks
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Other tasks (not linked to any goal) */}
+      {otherTasks.length > 0 && (
+        <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
+          <div className="mb-2.5 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Other Tasks
+            </span>
+            <span className="text-xs text-gray-400">
+              {otherDone}/{otherTasks.length} done
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {otherTasks.map((task) => (
+              <span
+                key={task.id}
+                className="flex items-center gap-1 text-sm"
               >
-                <span>{STATUS_ICON[goal.status]}</span>
-                <span>{goal.title}</span>
-                <span className="ml-0.5 text-xs opacity-60">
-                  {STATUS_LABEL[goal.status]}
+                <span className={ICON_COLOR[task.status]}>
+                  {STATUS_ICON[task.status]}
                 </span>
-              </div>
+                <span className="text-xs text-gray-400">{task.assignee}:</span>
+                <span className="text-gray-700 dark:text-gray-300">
+                  {task.content}
+                </span>
+              </span>
             ))}
           </div>
         </div>
       )}
 
-      {/* Weekly tasks by assignee */}
-      {weeklyTasks.length > 0 && (
+      {/* Weekly Achievement mini bars */}
+      {achievementTrend.length > 0 && (
         <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
           <div className="mb-2.5 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Weekly Tasks
+              Weekly Achievement
             </span>
-            <span className="text-xs text-gray-400">
-              {weekDone}/{weekTotal}{" "}
-              {weekPct > 0 && `${weekPct}%`}
-            </span>
+            <span className="text-xs text-gray-400">current month</span>
           </div>
-          <div className="space-y-2">
-            {[...byAssignee.entries()].map(([assignee, memberTasks]) => {
-              const memberDone = memberTasks.filter(
-                (t) => t.status === "done"
-              ).length;
-              return (
-                <div key={assignee} className="flex items-start gap-3">
-                  <div className="flex w-20 shrink-0 items-center gap-1.5">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                      {assignee.charAt(0).toUpperCase()}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {assignee}
-                    </span>
-                  </div>
-                  <div className="flex flex-1 flex-wrap gap-x-3 gap-y-1">
-                    {memberTasks.map((task) => (
-                      <span
-                        key={task.id}
-                        className="flex items-center gap-1 text-sm"
-                      >
-                        <span className={ICON_COLOR[task.status]}>
-                          {STATUS_ICON[task.status]}
-                        </span>
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {task.content}
-                        </span>
-                        {task.deadline && (
-                          <span className="rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
-                            {task.deadline.slice(5)}
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                  <span className="shrink-0 text-xs text-gray-400">
-                    {memberDone}/{memberTasks.length}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <MiniAchievementBars
+            data={achievementTrend}
+            currentWeekId={currentWeekId}
+          />
         </div>
       )}
     </div>

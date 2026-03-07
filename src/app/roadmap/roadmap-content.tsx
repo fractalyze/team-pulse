@@ -2,10 +2,10 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
-import type { GoalStatus, RoadmapData, WeeklyTask } from "@/lib/types";
+import { useState, useCallback, useMemo } from "react";
+import type { GoalStatus, RoadmapData } from "@/lib/types";
 import { TimelineMonth } from "./timeline-month";
-import { TaskDetailPanel } from "./task-detail-panel";
+import { AchievementTrendChart } from "@/components/charts/achievement-trend";
 
 interface RoadmapContentProps {
   data: RoadmapData;
@@ -20,10 +20,6 @@ function nextStatus(current: GoalStatus): GoalStatus {
 
 export function RoadmapContent({ data }: RoadmapContentProps) {
   const [roadmap, setRoadmap] = useState(data);
-  const [selectedWeek, setSelectedWeek] = useState<{
-    weekId: string;
-    tasks: WeeklyTask[];
-  } | null>(null);
 
   const handleGoalStatusChange = useCallback(
     async (month: string, goalId: string, currentStatus: GoalStatus) => {
@@ -97,108 +93,29 @@ export function RoadmapContent({ data }: RoadmapContentProps) {
     []
   );
 
-  const handleTaskStatusChange = useCallback(
-    async (weekId: string, taskId: string, currentStatus: GoalStatus) => {
-      const newStatus = nextStatus(currentStatus);
-
-      // Optimistic update in roadmap
-      setRoadmap((prev) => {
-        const months = prev.months.map((m) => ({
-          ...m,
-          weeks: m.weeks.map((w) => {
-            if (w.weekId !== weekId) return w;
-            const tasks = w.tasks.map((t) =>
-              t.id === taskId ? { ...t, status: newStatus } : t
-            );
-            const doneCount = tasks.filter((t) => t.status === "done").length;
-            return {
-              ...w,
-              tasks,
-              achievementRate:
-                tasks.length > 0
-                  ? Math.round((doneCount / tasks.length) * 100)
-                  : -1,
-            };
-          }),
-        }));
-        return { ...prev, months };
-      });
-
-      // Optimistic update in panel
-      setSelectedWeek((prev) => {
-        if (!prev || prev.weekId !== weekId) return prev;
-        return {
-          ...prev,
-          tasks: prev.tasks.map((t) =>
-            t.id === taskId ? { ...t, status: newStatus } : t
-          ),
-        };
-      });
-
-      try {
-        await fetch("/api/goals", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tier: "week",
-            weekId,
-            id: taskId,
-            status: newStatus,
-          }),
-        });
-      } catch {
-        // Revert
-        setRoadmap((prev) => {
-          const months = prev.months.map((m) => ({
-            ...m,
-            weeks: m.weeks.map((w) => {
-              if (w.weekId !== weekId) return w;
-              const tasks = w.tasks.map((t) =>
-                t.id === taskId ? { ...t, status: currentStatus } : t
-              );
-              const doneCount = tasks.filter(
-                (t) => t.status === "done"
-              ).length;
-              return {
-                ...w,
-                tasks,
-                achievementRate:
-                  tasks.length > 0
-                    ? Math.round((doneCount / tasks.length) * 100)
-                    : -1,
-              };
-            }),
-          }));
-          return { ...prev, months };
-        });
-        setSelectedWeek((prev) => {
-          if (!prev || prev.weekId !== weekId) return prev;
-          return {
-            ...prev,
-            tasks: prev.tasks.map((t) =>
-              t.id === taskId ? { ...t, status: currentStatus } : t
-            ),
-          };
+  const achievementData = useMemo(() => {
+    const seen = new Set<string>();
+    const points: {
+      weekId: string;
+      label: string;
+      rate: number;
+      isCurrent: boolean;
+    }[] = [];
+    for (const month of roadmap.months) {
+      for (const week of month.weeks) {
+        if (seen.has(week.weekId)) continue;
+        seen.add(week.weekId);
+        if (week.tasks.length === 0) continue;
+        points.push({
+          weekId: week.weekId,
+          label: week.weekId.replace(/^\d{4}-/, ""),
+          rate: week.achievementRate,
+          isCurrent: week.isCurrent,
         });
       }
-    },
-    []
-  );
-
-  const handleWeekClick = useCallback(
-    (weekId: string) => {
-      // Find tasks for this week across all months
-      for (const month of roadmap.months) {
-        const week = month.weeks.find((w) => w.weekId === weekId);
-        if (week && week.tasks.length > 0) {
-          setSelectedWeek({ weekId, tasks: week.tasks });
-          return;
-        }
-      }
-      setSelectedWeek(null);
-    },
-    [roadmap]
-  );
+    }
+    return points;
+  }, [roadmap.months]);
 
   return (
     <div className="relative">
@@ -232,6 +149,16 @@ export function RoadmapContent({ data }: RoadmapContentProps) {
         </div>
       )}
 
+      {/* Achievement trend chart */}
+      {achievementData.length > 0 && (
+        <div className="mt-4 rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
+          <h3 className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            Weekly Achievement Trend
+          </h3>
+          <AchievementTrendChart data={achievementData} />
+        </div>
+      )}
+
       {/* Month swimlanes */}
       <div className="mt-4 space-y-4">
         {roadmap.months.map((month) => (
@@ -239,20 +166,10 @@ export function RoadmapContent({ data }: RoadmapContentProps) {
             key={month.month}
             month={month}
             onGoalStatusChange={handleGoalStatusChange}
-            onWeekClick={handleWeekClick}
           />
         ))}
       </div>
 
-      {/* Task detail panel */}
-      {selectedWeek && (
-        <TaskDetailPanel
-          weekId={selectedWeek.weekId}
-          tasks={selectedWeek.tasks}
-          onClose={() => setSelectedWeek(null)}
-          onTaskStatusChange={handleTaskStatusChange}
-        />
-      )}
     </div>
   );
 }
