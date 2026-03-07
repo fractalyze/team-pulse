@@ -83,6 +83,27 @@ export function weekIdToHalf(weekId: string): string {
   return `${year}-${half}`;
 }
 
+/** Get all ISO week IDs that overlap with the given month (e.g. "2026-03"). */
+export function getWeekIdsForMonth(month: string): string[] {
+  const [yearStr, monthStr] = month.split("-");
+  const year = parseInt(yearStr, 10);
+  const m = parseInt(monthStr, 10) - 1; // 0-indexed
+
+  const firstDay = new Date(Date.UTC(year, m, 1));
+  const lastDay = new Date(Date.UTC(year, m + 1, 0));
+
+  const weekIds = new Set<string>();
+  const d = new Date(firstDay);
+  while (d <= lastDay) {
+    weekIds.add(getWeekId(d));
+    // Advance to next Monday
+    const dayOfWeek = d.getUTCDay() || 7; // 1=Mon .. 7=Sun
+    d.setUTCDate(d.getUTCDate() + (8 - dayOfWeek));
+  }
+
+  return Array.from(weekIds).sort();
+}
+
 /** Format a date as "M/D(요일)" in KST. */
 export function formatDateKST(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;

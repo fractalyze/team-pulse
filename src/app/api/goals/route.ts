@@ -81,6 +81,61 @@ export async function GET(request: Request) {
   return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
 }
 
+export async function PATCH(request: Request) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { tier, id, status } = body;
+
+  const validStatuses = ["not_started", "in_progress", "done"];
+  if (!validStatuses.includes(status)) {
+    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+
+  if (tier === "month") {
+    const { month } = body;
+    if (!month || !id) {
+      return NextResponse.json(
+        { error: "month and id required" },
+        { status: 400 }
+      );
+    }
+    const goals = await getMonthlyGoals(month);
+    const goal = goals.find((g) => g.id === id);
+    if (!goal) {
+      return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    }
+    goal.status = status;
+    goal.updatedAt = new Date().toISOString();
+    await saveMonthlyGoals(month, goals);
+    return NextResponse.json({ status: "updated", data: goal });
+  }
+
+  if (tier === "week") {
+    const { weekId } = body;
+    if (!weekId || !id) {
+      return NextResponse.json(
+        { error: "weekId and id required" },
+        { status: 400 }
+      );
+    }
+    const tasks = await getWeeklyTasks(weekId);
+    const task = tasks.find((t) => t.id === id);
+    if (!task) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+    task.status = status;
+    task.updatedAt = new Date().toISOString();
+    await saveWeeklyTasks(weekId, tasks);
+    return NextResponse.json({ status: "updated", data: task });
+  }
+
+  return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
+}
+
 export async function POST(request: Request) {
   const forbidden = await checkAdmin();
   if (forbidden) return forbidden;

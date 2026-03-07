@@ -159,6 +159,34 @@ export interface WeeklyTask {
   updatedAt: string;
 }
 
+// --- Roadmap Data ---
+
+export interface RoadmapWeek {
+  weekId: string;
+  weekLabel: string; // "W10 · 3/2-3/8"
+  tasks: WeeklyTask[];
+  achievementRate: number; // 0-100
+  blockingCount: number;
+  isCurrent: boolean;
+}
+
+export interface RoadmapMonth {
+  month: string;
+  label: string; // "3월"
+  goals: MonthlyGoal[];
+  weeks: RoadmapWeek[];
+  progressRate: number; // 0-100 (done goals / total goals)
+  isAtRisk: boolean;
+  isCurrent: boolean;
+}
+
+export interface RoadmapData {
+  halfYear: HalfYearObjective | null;
+  halfProgress: number; // 0-100
+  months: RoadmapMonth[];
+  currentWeekId: string;
+}
+
 // --- OKR Data ---
 
 export interface OKRStatus {

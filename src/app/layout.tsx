@@ -58,6 +58,12 @@ export default async function RootLayout({
                 >
                   Trends
                 </Link>
+                <Link
+                  href="/roadmap"
+                  className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                >
+                  Roadmap
+                </Link>
                 {isAdmin && (
                   <Link
                     href="/admin"
