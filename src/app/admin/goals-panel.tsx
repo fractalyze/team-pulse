@@ -10,6 +10,7 @@ import type {
   WeeklyTask,
   TeamMember,
 } from "@/lib/types";
+import { weekIdToMonth } from "@/lib/week";
 
 type Tab = "half" | "month" | "week";
 
@@ -326,18 +327,23 @@ function WeeklyTab() {
   const [weekId, setWeekId] = useState(currentWeekId());
   const [tasks, setTasks] = useState<WeeklyTask[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [monthlyGoals, setMonthlyGoals] = useState<MonthlyGoal[]>([]);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    const [tasksRes, teamRes] = await Promise.all([
+    const month = weekIdToMonth(weekId);
+    const [tasksRes, teamRes, goalsRes] = await Promise.all([
       fetch(`/api/goals?tier=week&weekId=${weekId}`),
       fetch("/api/goals?tier=team"),
+      fetch(`/api/goals?tier=month&month=${month}`),
     ]);
     const { data: tasksData } = await tasksRes.json();
     const { data: teamData } = await teamRes.json();
+    const { data: goalsData } = await goalsRes.json();
     setTasks(tasksData ?? []);
     setTeam(teamData ?? []);
+    setMonthlyGoals(goalsData ?? []);
     setLoaded(true);
   }, [weekId]);
 
@@ -404,6 +410,7 @@ function WeeklyTab() {
       ...t,
       id: crypto.randomUUID(),
       weekId,
+      startDate: undefined,
       status: "not_started" as GoalStatus,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -493,12 +500,40 @@ function WeeklyTab() {
                   />
                   <input
                     type="date"
+                    value={task.startDate ?? ""}
+                    onChange={(e) =>
+                      updateTask(task.id, {
+                        startDate: e.target.value || undefined,
+                      })
+                    }
+                    title="Start date"
+                    className="w-36 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  />
+                  <input
+                    type="date"
                     value={task.deadline}
                     onChange={(e) =>
                       updateTask(task.id, { deadline: e.target.value })
                     }
+                    title="Deadline"
                     className="w-36 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                   />
+                  <select
+                    value={task.goalId ?? ""}
+                    onChange={(e) =>
+                      updateTask(task.id, {
+                        goalId: e.target.value || undefined,
+                      })
+                    }
+                    className="w-36 truncate rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    <option value="">No goal</option>
+                    {monthlyGoals.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.title}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     onClick={() => removeTask(task.id)}
                     className="text-sm text-red-500 hover:text-red-700"
