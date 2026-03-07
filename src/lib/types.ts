@@ -155,6 +155,8 @@ export interface WeeklyTask {
   content: string;
   deadline: string;
   status: GoalStatus;
+  startDate?: string; // "YYYY-MM-DD"
+  goalId?: string; // MonthlyGoal.id reference
   createdAt: string;
   updatedAt: string;
 }
