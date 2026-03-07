@@ -3,7 +3,7 @@
 "use client";
 
 import type { GoalStatus, RoadmapMonth } from "@/lib/types";
-import { TimelineWeek } from "./timeline-week";
+import { TimelineGantt } from "./timeline-gantt";
 
 const STATUS_ICON: Record<GoalStatus, string> = {
   done: "\u2713",
@@ -26,13 +26,11 @@ interface TimelineMonthProps {
     goalId: string,
     currentStatus: GoalStatus
   ) => void;
-  onWeekClick: (weekId: string) => void;
 }
 
 export function TimelineMonth({
   month,
   onGoalStatusChange,
-  onWeekClick,
 }: TimelineMonthProps) {
   return (
     <div
@@ -96,18 +94,8 @@ export function TimelineMonth({
         </div>
       )}
 
-      {/* Week cells grid */}
-      <div className="overflow-x-auto px-4 py-3">
-        <div className="flex gap-3">
-          {month.weeks.map((week) => (
-            <TimelineWeek
-              key={week.weekId}
-              week={week}
-              onClick={() => onWeekClick(week.weekId)}
-            />
-          ))}
-        </div>
-      </div>
+      {/* Gantt timeline */}
+      <TimelineGantt month={month} />
     </div>
   );
 }
