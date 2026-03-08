@@ -2,7 +2,13 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+interface OtelStatus {
+  email: string;
+  lastSeen: string;
+  totalDataPoints: number;
+}
 
 interface TriggerResult {
   status: "idle" | "loading" | "success" | "error";
@@ -83,6 +89,25 @@ const GROUPS = ["test", "collect", "send"] as const;
 
 export function AdminPanel() {
   const [results, setResults] = useState<Record<string, TriggerResult>>({});
+  const [otelConfigured, setOtelConfigured] = useState<boolean | null>(null);
+  const [otelStatuses, setOtelStatuses] = useState<OtelStatus[]>([]);
+  const [showSetup, setShowSetup] = useState(false);
+
+  useEffect(() => {
+    const secret = getCronSecret();
+    if (!secret) return;
+    fetch("/api/otel/status", {
+      headers: { Authorization: `Bearer ${secret}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          setOtelConfigured(data.configured);
+          setOtelStatuses(data.statuses);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function runTrigger(id: string, actions: string[]) {
     setResults((prev) => ({ ...prev, [id]: { status: "loading" } }));
@@ -146,6 +171,86 @@ export function AdminPanel() {
           onChange={(e) => localStorage.setItem("cron-secret", e.target.value)}
           className="mt-1 w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-mono dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
         />
+      </div>
+
+      {/* OTel Connection Status */}
+      <div className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Claude Code OTel
+            </h2>
+            <p className="text-xs text-gray-400">
+              모든 팀원이 OTel을 설정하면 개별 사용자별 사용량이 수집됩니다.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-full ${
+                otelConfigured ? "bg-green-500" : "bg-gray-400"
+              }`}
+            />
+            <span className="text-gray-500">
+              {otelConfigured === null
+                ? "Loading..."
+                : otelConfigured
+                  ? "OTEL_INGEST_TOKEN configured"
+                  : "OTEL_INGEST_TOKEN not set"}
+            </span>
+          </div>
+        </div>
+
+        {otelStatuses.length > 0 ? (
+          <div className="mb-3 space-y-2">
+            {otelStatuses.map((s) => (
+              <div
+                key={s.email}
+                className="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm dark:border-gray-700"
+              >
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {s.email}
+                </span>
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  <span>
+                    Last seen:{" "}
+                    {new Date(s.lastSeen).toLocaleString("ko-KR", {
+                      timeZone: "Asia/Seoul",
+                    })}
+                  </span>
+                  <span>{s.totalDataPoints.toLocaleString()} data points</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mb-3 text-xs text-gray-400">
+            No OTel connections yet.
+          </p>
+        )}
+
+        <button
+          onClick={() => setShowSetup(!showSetup)}
+          className="text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+        >
+          {showSetup ? "Hide" : "Show"} Setup Instructions
+        </button>
+
+        {showSetup && (
+          <pre className="mt-2 overflow-auto rounded bg-gray-100 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+{`// ~/.claude/settings.json
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://<team-pulse-url>/api/otel",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer <OTEL_INGEST_TOKEN>",
+    "OTEL_METRIC_EXPORT_INTERVAL": "3600000"
+  }
+}
+// 3600000ms = 1시간. Upstash 무료 범위 유지를 위해 권장.`}
+          </pre>
+        )}
       </div>
 
       {/* Grouped trigger buttons */}

@@ -61,6 +61,7 @@ function backfillSnapshot(snapshot: WeeklySnapshot): WeeklySnapshot {
       thisWeekGoal: null,
       nextHardDeadline: null,
     },
+    crossRepoMilestones: snapshot.crossRepoMilestones ?? [],
   };
 }
 

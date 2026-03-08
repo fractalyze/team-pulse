@@ -10,6 +10,9 @@ import type {
   GitHubMetrics,
   ReviewInfo,
   ReviewHealthMetrics,
+  CrossRepoMilestone,
+  MilestonePRRef,
+  RepoMilestoneDetail,
 } from "../types";
 
 function getOctokit(): Octokit {
@@ -72,6 +75,7 @@ async function collectMergedPRs(
         additions: (pr as Record<string, unknown>).additions as number ?? 0,
         deletions: (pr as Record<string, unknown>).deletions as number ?? 0,
         changedFiles: (pr as Record<string, unknown>).changed_files as number ?? 0,
+        milestone: pr.milestone?.title ?? null,
       });
     }
 
@@ -121,6 +125,7 @@ async function collectOpenPRs(
         additions: (pr as Record<string, unknown>).additions as number ?? 0,
         deletions: (pr as Record<string, unknown>).deletions as number ?? 0,
         changedFiles: (pr as Record<string, unknown>).changed_files as number ?? 0,
+        milestone: pr.milestone?.title ?? null,
       });
     }
 
@@ -419,4 +424,115 @@ export async function collectGitHubMetrics(
     commitsByAuthor,
     reviewHealth,
   };
+}
+
+/** Collect cross-repo milestones by aggregating same-titled milestones across repos. */
+export async function collectCrossRepoMilestones(): Promise<CrossRepoMilestone[]> {
+  const octokit = getOctokit();
+
+  // 1. Fetch open milestones from all repos
+  const milestonesByTitle = new Map<string, {
+    description: string;
+    dueOn: string | null;
+    repoMilestones: { repo: string; number: number }[];
+  }>();
+
+  for (const repo of MONITORED_REPOS) {
+    try {
+      const { data: milestones } = await octokit.issues.listMilestones({
+        owner: ORG,
+        repo,
+        state: "open",
+      });
+
+      for (const ms of milestones) {
+        const existing = milestonesByTitle.get(ms.title);
+        if (existing) {
+          existing.repoMilestones.push({ repo, number: ms.number });
+        } else {
+          milestonesByTitle.set(ms.title, {
+            description: ms.description ?? "",
+            dueOn: ms.due_on ? ms.due_on.slice(0, 10) : null,
+            repoMilestones: [{ repo, number: ms.number }],
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to list milestones for ${repo}:`, error);
+    }
+  }
+
+  // 2. For each milestone, fetch associated PRs
+  const results: CrossRepoMilestone[] = [];
+
+  for (const [title, info] of milestonesByTitle) {
+    const repos: RepoMilestoneDetail[] = [];
+    let mergedCount = 0;
+    let openCount = 0;
+
+    for (const { repo, number: msNumber } of info.repoMilestones) {
+      try {
+        const { data: issues } = await octokit.issues.listForRepo({
+          owner: ORG,
+          repo,
+          milestone: String(msNumber),
+          state: "all",
+          per_page: 100,
+        });
+
+        const prs: MilestonePRRef[] = [];
+        for (const issue of issues) {
+          if (!issue.pull_request) continue;
+
+          let state: MilestonePRRef["state"];
+          if (issue.pull_request.merged_at) {
+            state = "merged";
+            mergedCount++;
+          } else if (issue.state === "open") {
+            state = "open";
+            openCount++;
+          } else {
+            state = "closed";
+          }
+
+          prs.push({
+            repo,
+            number: issue.number,
+            title: issue.title,
+            author: issue.user?.login ?? "unknown",
+            url: issue.html_url,
+            state,
+          });
+        }
+
+        if (prs.length > 0) {
+          repos.push({ repo, prs });
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to list issues for milestone "${title}" in ${repo}:`,
+          error
+        );
+      }
+    }
+
+    results.push({
+      title,
+      description: info.description,
+      dueOn: info.dueOn,
+      repos,
+      mergedCount,
+      openCount,
+    });
+  }
+
+  // 3. Sort: dueOn first (ascending), then alphabetical
+  results.sort((a, b) => {
+    if (a.dueOn && b.dueOn) return a.dueOn.localeCompare(b.dueOn);
+    if (a.dueOn) return -1;
+    if (b.dueOn) return 1;
+    return a.title.localeCompare(b.title);
+  });
+
+  return results;
 }

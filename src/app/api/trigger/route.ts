@@ -1,7 +1,7 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { NextResponse } from "next/server";
-import { collectGitHubMetrics } from "@/lib/collectors/github";
+import { collectGitHubMetrics, collectCrossRepoMilestones } from "@/lib/collectors/github";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { createWeeklySyncPage } from "@/lib/generators/notion-page";
 import {
@@ -183,12 +183,40 @@ export async function POST(request: Request) {
   }
 
 
+  if (actions.includes("collect-milestones")) {
+    try {
+      const milestones = await collectCrossRepoMilestones();
+      return NextResponse.json({
+        status: "success",
+        source: "milestones",
+        data: {
+          count: milestones.length,
+          milestones: milestones.map((m) => ({
+            title: m.title,
+            dueOn: m.dueOn,
+            repos: m.repos.length,
+            mergedCount: m.mergedCount,
+            openCount: m.openCount,
+          })),
+        },
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { source: "milestones", error: String(e) },
+        { status: 500 }
+      );
+    }
+  }
+
   // --- Individual save (collect + merge into existing snapshot) ---
 
   if (actions.includes("save-github")) {
     try {
       const team = await getTeam();
-      const github = await collectGitHubMetrics(weekId, team);
+      const [github, crossRepoMilestones] = await Promise.all([
+        collectGitHubMetrics(weekId, team),
+        collectCrossRepoMilestones(),
+      ]);
       const existing = await getSnapshot(weekId);
       const snapshot: WeeklySnapshot = {
         ...(existing ?? {
@@ -209,6 +237,7 @@ export async function POST(request: Request) {
           github,
           team
         ),
+        crossRepoMilestones,
       };
       await saveSnapshot(snapshot);
       return NextResponse.json({
@@ -268,9 +297,10 @@ export async function POST(request: Request) {
   try {
     const team = await getTeam();
 
-    const [github, contextSync] = await Promise.all([
+    const [github, contextSync, crossRepoMilestones] = await Promise.all([
       collectGitHubMetrics(weekId, team),
       collectContextSyncMetrics(weekId),
+      collectCrossRepoMilestones(),
     ]);
 
     const okr = {
@@ -287,7 +317,8 @@ export async function POST(request: Request) {
       github,
       contextSync,
       okr,
-      team
+      team,
+      crossRepoMilestones,
     );
     const delta = computeDelta(currentSnapshot, previousSnapshot);
 

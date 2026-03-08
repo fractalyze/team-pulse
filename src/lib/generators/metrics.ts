@@ -8,6 +8,7 @@ import type {
   OKRMetrics,
   MemberMilestone,
   TeamMember,
+  CrossRepoMilestone,
 } from "../types";
 
 /** Compute week-over-week delta between current and previous snapshots. */
@@ -83,7 +84,8 @@ export function assembleSnapshot(
   github: GitHubMetrics,
   contextSync: ContextSyncMetrics,
   okr: OKRMetrics,
-  team: TeamMember[] = []
+  team: TeamMember[] = [],
+  crossRepoMilestones: CrossRepoMilestone[] = [],
 ): WeeklySnapshot {
   return {
     weekId,
@@ -92,5 +94,6 @@ export function assembleSnapshot(
     contextSync,
     milestones: buildMilestones(github, team),
     okr,
+    crossRepoMilestones,
   };
 }
