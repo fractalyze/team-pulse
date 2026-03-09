@@ -43,7 +43,7 @@ const TRIGGERS: Trigger[] = [
   {
     id: "github",
     label: "GitHub",
-    description: "PRs, commits, review health per repo",
+    description: "PRs, commits, review health, milestones per repo",
     actions: ["collect-github"],
     saveActions: ["save-github"],
     group: "collect",

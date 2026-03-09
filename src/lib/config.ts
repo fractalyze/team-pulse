@@ -1,7 +1,5 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
-import type { RepoOKRMapping } from "./types";
-
 export const ORG = "fractalyze";
 
 export const MONITORED_REPOS = [
@@ -15,18 +13,6 @@ export const MONITORED_REPOS = [
   "zkx-gpu",
   "rabbitsnark-py",
 ];
-
-export const OKR_REPO_MAP: RepoOKRMapping = {
-  zkx: "OBJ1: GPU E2E Pipeline",
-  "prime-ir": "OBJ1: GPU E2E Pipeline",
-  "whir-zorch": "OBJ1: GPU E2E Pipeline",
-  jax: "OBJ1: GPU E2E Pipeline",
-  stablehlo: "OBJ1: GPU E2E Pipeline",
-  zk_dtypes: "OBJ1: GPU E2E Pipeline",
-  "zkx-gpu": "OBJ1: GPU E2E Pipeline",
-  "riscv-witness": "Infra/Tooling",
-  "rabbitsnark-py": "OBJ1: GPU E2E Pipeline",
-};
 
 // Notion IDs
 export const CONTEXT_SYNC_DB = "2ffa84235e5680d2adf2fe3b44eddf32";

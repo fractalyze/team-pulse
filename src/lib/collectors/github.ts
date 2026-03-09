@@ -1,7 +1,7 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { Octokit } from "@octokit/rest";
-import { ORG, MONITORED_REPOS, OKR_REPO_MAP } from "../config";
+import { ORG, MONITORED_REPOS } from "../config";
 import type { TeamMember } from "../types";
 import { getWeekRange } from "../week";
 import type {
@@ -10,9 +10,7 @@ import type {
   GitHubMetrics,
   ReviewInfo,
   ReviewHealthMetrics,
-  CrossRepoMilestone,
-  MilestonePRRef,
-  RepoMilestoneDetail,
+  MilestoneMetadata,
 } from "../types";
 
 function getOctokit(): Octokit {
@@ -330,7 +328,6 @@ export async function collectGitHubMetrics(
 
   const repos: RepoPRSummary[] = [];
   const byAuthor: Record<string, { merged: number; open: number }> = {};
-  const byObjective: Record<string, number> = {};
   let totalMerged = 0;
   let totalOpen = 0;
   let totalCommits = 0;
@@ -384,10 +381,6 @@ export async function collectGitHubMetrics(
         byAuthor[pr.author].open++;
       }
 
-      // Aggregate by objective
-      const objective = OKR_REPO_MAP[repo] ?? "Other";
-      byObjective[objective] = (byObjective[objective] ?? 0) + merged.length;
-
       // Collect reviews for merged PRs
       const reviews = await collectPRReviews(octokit, repo, merged);
       allReviews.push(...reviews);
@@ -418,7 +411,6 @@ export async function collectGitHubMetrics(
     totalMerged,
     totalOpen,
     byAuthor,
-    byObjective,
     avgLeadTimeDays,
     totalCommits,
     commitsByAuthor,
@@ -426,15 +418,14 @@ export async function collectGitHubMetrics(
   };
 }
 
-/** Collect cross-repo milestones by aggregating same-titled milestones across repos. */
-export async function collectCrossRepoMilestones(): Promise<CrossRepoMilestone[]> {
+/** Collect open milestone metadata from all monitored repos. */
+export async function collectMilestoneMetadata(): Promise<MilestoneMetadata[]> {
   const octokit = getOctokit();
 
-  // 1. Fetch open milestones from all repos
   const milestonesByTitle = new Map<string, {
     description: string;
     dueOn: string | null;
-    repoMilestones: { repo: string; number: number }[];
+    repos: string[];
   }>();
 
   for (const repo of MONITORED_REPOS) {
@@ -448,12 +439,12 @@ export async function collectCrossRepoMilestones(): Promise<CrossRepoMilestone[]
       for (const ms of milestones) {
         const existing = milestonesByTitle.get(ms.title);
         if (existing) {
-          existing.repoMilestones.push({ repo, number: ms.number });
+          existing.repos.push(repo);
         } else {
           milestonesByTitle.set(ms.title, {
             description: ms.description ?? "",
             dueOn: ms.due_on ? ms.due_on.slice(0, 10) : null,
-            repoMilestones: [{ repo, number: ms.number }],
+            repos: [repo],
           });
         }
       }
@@ -462,71 +453,17 @@ export async function collectCrossRepoMilestones(): Promise<CrossRepoMilestone[]
     }
   }
 
-  // 2. For each milestone, fetch associated PRs
-  const results: CrossRepoMilestone[] = [];
-
+  const results: MilestoneMetadata[] = [];
   for (const [title, info] of milestonesByTitle) {
-    const repos: RepoMilestoneDetail[] = [];
-    let mergedCount = 0;
-    let openCount = 0;
-
-    for (const { repo, number: msNumber } of info.repoMilestones) {
-      try {
-        const { data: issues } = await octokit.issues.listForRepo({
-          owner: ORG,
-          repo,
-          milestone: String(msNumber),
-          state: "all",
-          per_page: 100,
-        });
-
-        const prs: MilestonePRRef[] = [];
-        for (const issue of issues) {
-          if (!issue.pull_request) continue;
-
-          let state: MilestonePRRef["state"];
-          if (issue.pull_request.merged_at) {
-            state = "merged";
-            mergedCount++;
-          } else if (issue.state === "open") {
-            state = "open";
-            openCount++;
-          } else {
-            state = "closed";
-          }
-
-          prs.push({
-            repo,
-            number: issue.number,
-            title: issue.title,
-            author: issue.user?.login ?? "unknown",
-            url: issue.html_url,
-            state,
-          });
-        }
-
-        if (prs.length > 0) {
-          repos.push({ repo, prs });
-        }
-      } catch (error) {
-        console.warn(
-          `Failed to list issues for milestone "${title}" in ${repo}:`,
-          error
-        );
-      }
-    }
-
     results.push({
       title,
       description: info.description,
       dueOn: info.dueOn,
-      repos,
-      mergedCount,
-      openCount,
+      repos: info.repos,
     });
   }
 
-  // 3. Sort: dueOn first (ascending), then alphabetical
+  // Sort: dueOn first (ascending), then alphabetical
   results.sort((a, b) => {
     if (a.dueOn && b.dueOn) return a.dueOn.localeCompare(b.dueOn);
     if (a.dueOn) return -1;

@@ -8,10 +8,6 @@ export interface TeamMember {
   slack: string;
 }
 
-export interface RepoOKRMapping {
-  [repo: string]: string;
-}
-
 // --- GitHub PR Data ---
 
 export interface PRInfo {
@@ -71,7 +67,6 @@ export interface GitHubMetrics {
   totalMerged: number;
   totalOpen: number;
   byAuthor: Record<string, { merged: number; open: number }>;
-  byObjective: Record<string, number>;
   avgLeadTimeDays: number | null;
   totalCommits: number;
   commitsByAuthor: Record<string, number>;
@@ -228,16 +223,14 @@ export interface PropagationEntry {
   propagationScore: 0 | 1 | 2 | 3;
 }
 
-// --- Milestone Tracking ---
-
-export interface MemberMilestone {
-  name: string;
-  achieved: string[];
-  blockingPoints: string[];
-  nextWeekGoals: string[];
-}
-
 // --- Cross-Repo Milestones ---
+
+export interface MilestoneMetadata {
+  title: string;
+  description: string;
+  dueOn: string | null;
+  repos: string[];
+}
 
 export interface MilestonePRRef {
   repo: string;
@@ -270,7 +263,6 @@ export interface WeeklySnapshot {
   github: GitHubMetrics;
   knowledge?: KnowledgeMetrics;
   contextSync: ContextSyncMetrics;
-  milestones: MemberMilestone[];
   okr?: OKRMetrics;
   propagation?: PropagationEntry[];
   crossRepoMilestones?: CrossRepoMilestone[];
