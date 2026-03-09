@@ -6,6 +6,7 @@ import {
   getWeeklyTasks,
   getAllHalfYearPeriods,
 } from "@/lib/store/goals";
+import type { WeeklyTask } from "@/lib/types";
 import {
   weekIdToMonth,
   weekIdToHalf,
@@ -61,8 +62,18 @@ export async function GoalProgressServer({ weekId }: GoalProgressServerProps) {
     })
     .filter((d) => d.rate >= 0);
 
-  // All tasks across the month (for goal linking)
-  const allMonthTasks = weekTaskArrays.flat();
+  // All tasks across the month (for goal linking), deduplicated by ID
+  // When the same task is carried across weeks, keep the latest version.
+  const allMonthTasks = (() => {
+    const byId = new Map<string, WeeklyTask>();
+    for (const task of weekTaskArrays.flat()) {
+      const existing = byId.get(task.id);
+      if (!existing || task.updatedAt > existing.updatedAt) {
+        byId.set(task.id, task);
+      }
+    }
+    return Array.from(byId.values());
+  })();
 
   return (
     <GoalProgress
