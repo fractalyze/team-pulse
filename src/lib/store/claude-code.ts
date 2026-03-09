@@ -187,6 +187,24 @@ export async function getOtelDates(limit: number = 60): Promise<string[]> {
   return dates as string[];
 }
 
+/** Delete all OTel data for a given email. */
+export async function deleteOtelUser(email: string): Promise<number> {
+  const redis = getRedis();
+  const dates = await getOtelDates(365);
+  let deleted = 0;
+
+  for (const date of dates) {
+    const key = otelDayKey(email, date);
+    const removed = await redis.del(key);
+    if (removed > 0) deleted++;
+  }
+
+  await redis.del(`cc-otel:status:${email}`);
+  await redis.srem("cc-otel:emails", email);
+
+  return deleted;
+}
+
 /** Get OTel connection statuses for the admin panel. */
 export async function getOtelStatuses(): Promise<OtelConnectionStatus[]> {
   const emails = await getOtelEmails();

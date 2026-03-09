@@ -32,16 +32,33 @@ export async function POST(request: Request) {
 
   let actions: string[] = ["collect", "notion", "slack", "dm"];
   let weekId = getWeekId();
+  let requestBody: Record<string, unknown> = {};
   try {
-    const body = await request.json();
-    if (body.actions && Array.isArray(body.actions)) {
-      actions = body.actions;
+    requestBody = await request.json();
+    if (requestBody.actions && Array.isArray(requestBody.actions)) {
+      actions = requestBody.actions;
     }
-    if (body.weekId && typeof body.weekId === "string") {
-      weekId = body.weekId;
+    if (requestBody.weekId && typeof requestBody.weekId === "string") {
+      weekId = requestBody.weekId;
     }
   } catch {
     // Use default actions
+  }
+
+  // --- OTel user management ---
+
+  if (actions.includes("delete-otel-user")) {
+    const { deleteOtelUser } = await import("@/lib/store/claude-code");
+    const email = requestBody.email as string;
+    if (!email) {
+      return NextResponse.json({ error: "email required" }, { status: 400 });
+    }
+    try {
+      const deleted = await deleteOtelUser(email);
+      return NextResponse.json({ status: "success", deleted, email });
+    } catch (e) {
+      return NextResponse.json({ error: String(e) }, { status: 500 });
+    }
   }
 
   // --- Test actions (return immediately) ---

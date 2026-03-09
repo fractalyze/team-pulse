@@ -245,10 +245,12 @@ export function AdminPanel() {
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "https://<team-pulse-url>/api/otel",
     "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer <OTEL_INGEST_TOKEN>",
-    "OTEL_METRIC_EXPORT_INTERVAL": "3600000"
+    "OTEL_METRIC_EXPORT_INTERVAL": "3600000",
+    "OTEL_RESOURCE_ATTRIBUTES": "user.email=<your-email>"
   }
 }
-// 3600000ms = 1시간. Upstash 무료 범위 유지를 위해 권장.`}
+// OTEL_METRIC_EXPORT_INTERVAL: 3600000ms = 1시간. Upstash 무료 범위 유지를 위해 권장.
+// OTEL_RESOURCE_ATTRIBUTES: API key 인증 시 user.email 수동 설정 필요. OAuth 사용 시 자동 전송.`}
           </pre>
         )}
       </div>
