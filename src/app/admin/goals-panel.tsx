@@ -564,23 +564,24 @@ function WeeklyTab() {
                       </option>
                     ))}
                   </select>
-                  <select
+                  <input
+                    list={`ms-list-${task.id}`}
                     value={task.milestoneTitle ?? ""}
                     onChange={(e) =>
                       updateTask(task.id, {
                         milestoneTitle: e.target.value || undefined,
                       })
                     }
+                    placeholder="Milestone"
                     className="w-40 truncate rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  >
-                    <option value="">No milestone</option>
+                  />
+                  <datalist id={`ms-list-${task.id}`}>
                     {milestones.map((m) => (
                       <option key={m.title} value={m.title}>
-                        {m.title}
-                        {m.dueOn ? ` (~${m.dueOn})` : ""}
+                        {m.dueOn ? `~${m.dueOn}` : ""}
                       </option>
                     ))}
-                  </select>
+                  </datalist>
                   <button
                     onClick={() => removeTask(task.id)}
                     className="text-sm text-red-500 hover:text-red-700"
