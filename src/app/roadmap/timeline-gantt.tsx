@@ -65,8 +65,18 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
       monthStart.getTime() + (totalDays - 1) * DAY_MS
     );
 
+    // Deduplicate tasks carried across weeks — keep the latest version
+    const taskById = new Map<string, { task: typeof month.weeks[0]["tasks"][0]; weekId: string }>();
     for (const week of month.weeks) {
       for (const task of week.tasks) {
+        const existing = taskById.get(task.id);
+        if (!existing || task.updatedAt > existing.task.updatedAt) {
+          taskById.set(task.id, { task, weekId: week.weekId });
+        }
+      }
+    }
+
+    for (const { task } of taskById.values()) {
         const { start: weekStart, end: weekEnd } = getWeekRange(task.weekId);
 
         const taskStart = task.startDate
@@ -103,7 +113,6 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
 
         if (!map.has(task.assignee)) map.set(task.assignee, []);
         map.get(task.assignee)!.push(bar);
-      }
     }
 
     return map;
