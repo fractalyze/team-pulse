@@ -27,6 +27,7 @@ export interface PRInfo {
   deletions: number;
   changedFiles: number;
   milestone: string | null;
+  draft: boolean;
 }
 
 export interface RepoPRSummary {
@@ -240,6 +241,7 @@ export interface MilestonePRRef {
   author: string;
   url: string;
   state: "open" | "merged" | "closed";
+  draft: boolean;
 }
 
 export interface RepoMilestoneDetail {
@@ -254,6 +256,7 @@ export interface CrossRepoMilestone {
   repos: RepoMilestoneDetail[];
   mergedCount: number;
   openCount: number;
+  draftCount: number;
 }
 
 // --- Weekly Snapshot (stored in KV) ---

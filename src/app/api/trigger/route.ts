@@ -165,6 +165,7 @@ export async function POST(request: Request) {
             repos: m.repos.length,
             mergedCount: m.mergedCount,
             openCount: m.openCount,
+            draftCount: m.draftCount,
           })),
         },
       });

@@ -74,6 +74,7 @@ async function collectMergedPRs(
         deletions: (pr as Record<string, unknown>).deletions as number ?? 0,
         changedFiles: (pr as Record<string, unknown>).changed_files as number ?? 0,
         milestone: pr.milestone?.title ?? null,
+        draft: false,
       });
     }
 
@@ -106,7 +107,6 @@ async function collectOpenPRs(
     if (data.length === 0) break;
 
     for (const pr of data) {
-      if (pr.draft) continue;
       prs.push({
         repo,
         number: pr.number,
@@ -124,6 +124,7 @@ async function collectOpenPRs(
         deletions: (pr as Record<string, unknown>).deletions as number ?? 0,
         changedFiles: (pr as Record<string, unknown>).changed_files as number ?? 0,
         milestone: pr.milestone?.title ?? null,
+        draft: pr.draft ?? false,
       });
     }
 

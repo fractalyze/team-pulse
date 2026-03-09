@@ -63,9 +63,12 @@ function backfillSnapshot(snapshot: WeeklySnapshot): WeeklySnapshot {
     },
     crossRepoMilestones:
       snapshot.crossRepoMilestones?.some(
-        (ms) => ms.mergedCount + ms.openCount > 0,
+        (ms) => ms.mergedCount + ms.openCount + (ms.draftCount ?? 0) > 0,
       )
-        ? snapshot.crossRepoMilestones
+        ? snapshot.crossRepoMilestones.map((ms) => ({
+            ...ms,
+            draftCount: ms.draftCount ?? 0,
+          }))
         : buildCrossRepoMilestones(snapshot.github, []),
   };
 }

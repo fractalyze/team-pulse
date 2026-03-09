@@ -120,6 +120,7 @@ export function buildCrossRepoMilestones(
     const repos: RepoMilestoneDetail[] = [];
     let mergedCount = 0;
     let openCount = 0;
+    let draftCount = 0;
 
     if (repoMap) {
       for (const [repo, prs] of repoMap) {
@@ -132,11 +133,15 @@ export function buildCrossRepoMilestones(
           state: pr.state === "merged" ? "merged"
             : pr.state === "open" ? "open"
             : "closed",
+          draft: pr.draft,
         }));
 
         for (const ref of prRefs) {
           if (ref.state === "merged") mergedCount++;
-          else if (ref.state === "open") openCount++;
+          else if (ref.state === "open") {
+            if (ref.draft) draftCount++;
+            else openCount++;
+          }
         }
 
         repos.push({ repo, prs: prRefs });
@@ -150,6 +155,7 @@ export function buildCrossRepoMilestones(
       repos,
       mergedCount,
       openCount,
+      draftCount,
     });
   }
 
@@ -166,6 +172,7 @@ export function buildCrossRepoMilestones(
     const repos: RepoMilestoneDetail[] = [];
     let mergedCount = 0;
     let openCount = 0;
+    let draftCount = 0;
 
     for (const [repo, prs] of unassignedByRepo) {
       const prRefs: MilestonePRRef[] = prs.map((pr) => ({
@@ -177,11 +184,15 @@ export function buildCrossRepoMilestones(
         state: pr.state === "merged" ? "merged"
           : pr.state === "open" ? "open"
           : "closed",
+        draft: pr.draft,
       }));
 
       for (const ref of prRefs) {
         if (ref.state === "merged") mergedCount++;
-        else if (ref.state === "open") openCount++;
+        else if (ref.state === "open") {
+          if (ref.draft) draftCount++;
+          else openCount++;
+        }
       }
 
       repos.push({ repo, prs: prRefs });
@@ -194,6 +205,7 @@ export function buildCrossRepoMilestones(
       repos,
       mergedCount,
       openCount,
+      draftCount,
     });
   }
 

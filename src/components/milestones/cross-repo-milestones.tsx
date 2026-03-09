@@ -27,6 +27,8 @@ const STATE_COLOR: Record<MilestonePRRef["state"], string> = {
   closed: "text-gray-400",
 };
 
+const DRAFT_COLOR = "text-gray-400";
+
 function getDueStatus(dueOn: string | null): "normal" | "soon" | "overdue" {
   if (!dueOn) return "normal";
   const now = new Date();
@@ -73,7 +75,7 @@ function MilestoneRow({
   onToggle: () => void;
 }) {
   const isUnassigned = ms.title === UNASSIGNED_TITLE;
-  const total = ms.mergedCount + ms.openCount;
+  const total = ms.mergedCount + ms.openCount + ms.draftCount;
   const pct = total > 0 ? Math.round((ms.mergedCount / total) * 100) : 0;
   const dueStatus = getDueStatus(ms.dueOn);
   const authorGroups = useMemo(() => groupPRsByAuthor(ms.repos), [ms.repos]);
@@ -99,7 +101,7 @@ function MilestoneRow({
         <div className="flex shrink-0 items-center gap-3">
           {isUnassigned ? (
             <span className="text-xs tabular-nums text-gray-600 dark:text-gray-300">
-              {ms.mergedCount} merged · {ms.openCount} open
+              {ms.mergedCount} merged · {ms.openCount} open{ms.draftCount > 0 ? ` · ${ms.draftCount} draft` : ""}
             </span>
           ) : (
             <>
@@ -111,7 +113,7 @@ function MilestoneRow({
                   />
                 </div>
                 <span className="text-xs tabular-nums text-gray-600 dark:text-gray-300">
-                  {ms.mergedCount}/{total}
+                  {ms.mergedCount}/{total}{ms.draftCount > 0 ? ` (${ms.draftCount} draft)` : ""}
                 </span>
               </div>
 
@@ -153,7 +155,7 @@ function MilestoneRow({
                         key={`${pr.repo}#${pr.number}`}
                         className="flex items-center gap-1.5 text-sm"
                       >
-                        <span className={`shrink-0 ${STATE_COLOR[pr.state]}`}>
+                        <span className={`shrink-0 ${pr.draft ? DRAFT_COLOR : STATE_COLOR[pr.state]}`}>
                           {STATE_ICON[pr.state]}
                         </span>
                         <a
@@ -167,6 +169,11 @@ function MilestoneRow({
                         <span className="min-w-0 truncate text-gray-500 dark:text-gray-400">
                           {pr.title}
                         </span>
+                        {pr.draft && (
+                          <span className="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                            Draft
+                          </span>
+                        )}
                         <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                           {pr.repo}
                         </span>
