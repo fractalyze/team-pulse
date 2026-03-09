@@ -432,16 +432,15 @@ function WeeklyTab() {
     const incomplete = (data as WeeklyTask[]).filter(
       (t) => t.status !== "done"
     );
-    const copied = incomplete.map((t) => ({
-      ...t,
-      id: crypto.randomUUID(),
-      weekId,
-      startDate: undefined,
-      status: "not_started" as GoalStatus,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }));
-    setTasks([...tasks, ...copied]);
+    const existingIds = new Set(tasks.map((t) => t.id));
+    const carried = incomplete
+      .filter((t) => !existingIds.has(t.id))
+      .map((t) => ({
+        ...t,
+        weekId,
+        updatedAt: new Date().toISOString(),
+      }));
+    setTasks([...tasks, ...carried]);
   }
 
   if (!loaded) return <p className="text-sm text-gray-500">Loading...</p>;
