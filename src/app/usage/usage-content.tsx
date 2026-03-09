@@ -158,30 +158,11 @@ export function UsageContent({
       });
     }
 
-    // Review latency cross-reference
-    if (
-      avgReviewLatencyHours !== null &&
-      avgReviewLatencyHours !== undefined
-    ) {
-      if (avgReviewLatencyHours > 24) {
-        msgs.push({
-          type: "info",
-          text: `Review Latency: ${avgReviewLatencyHours.toFixed(1)}h avg — 리뷰가 빠를수록 후속 작업의 캐시 적중률이 높아집니다.`,
-        });
-      } else {
-        msgs.push({
-          type: "info",
-          text: `Review Latency: ${avgReviewLatencyHours.toFixed(1)}h avg / Cache Read: ${formatPct(avgCacheHitRatio)}`,
-        });
-      }
-    }
-
     return msgs;
   }, [
     summary,
     avgCacheHitRatio,
     costPerSession,
-    avgReviewLatencyHours,
   ]);
 
   const sortIndicator = (key: SortKey) => {
