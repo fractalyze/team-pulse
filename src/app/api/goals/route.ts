@@ -13,8 +13,11 @@ import {
   getWeeklyTasks,
   saveWeeklyTasks,
   deleteWeeklyTasks,
+  getAllGoalWeekIds,
 } from "@/lib/store/goals";
+import { getAllWeekIds, getSnapshot } from "@/lib/store/kv";
 import { getTeam } from "@/lib/team";
+import { getWeekId } from "@/lib/week";
 import type { HalfYearObjective, MonthlyGoal, WeeklyTask } from "@/lib/types";
 
 async function checkAdmin(): Promise<NextResponse | null> {
@@ -71,6 +74,29 @@ export async function GET(request: Request) {
     }
     const tasks = await getWeeklyTasks(weekId);
     return NextResponse.json({ data: tasks });
+  }
+
+  if (tier === "weeks") {
+    const [goalWeeks, snapshotWeeks] = await Promise.all([
+      getAllGoalWeekIds(),
+      getAllWeekIds(),
+    ]);
+    const currentWk = getWeekId();
+    const allWeeks = [...new Set([currentWk, ...goalWeeks, ...snapshotWeeks])];
+    allWeeks.sort().reverse();
+    return NextResponse.json({ data: allWeeks });
+  }
+
+  if (tier === "milestones") {
+    const weekIds = await getAllWeekIds();
+    const snapshot = weekIds.length > 0 ? await getSnapshot(weekIds[0]) : null;
+    const milestones = (snapshot?.crossRepoMilestones ?? []).map((m) => ({
+      title: m.title,
+      dueOn: m.dueOn,
+      mergedCount: m.mergedCount,
+      openCount: m.openCount,
+    }));
+    return NextResponse.json({ data: milestones });
   }
 
   if (tier === "team") {

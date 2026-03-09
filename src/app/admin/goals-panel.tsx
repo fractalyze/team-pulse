@@ -10,7 +10,7 @@ import type {
   WeeklyTask,
   TeamMember,
 } from "@/lib/types";
-import { weekIdToMonth } from "@/lib/week";
+import { weekIdToMonth, getWeekRange } from "@/lib/week";
 
 type Tab = "half" | "month" | "week";
 
@@ -323,13 +323,39 @@ function MonthlyTab() {
 
 // --- Weekly Tab ---
 
+interface MilestoneOption {
+  title: string;
+  dueOn: string | null;
+  mergedCount: number;
+  openCount: number;
+}
+
+function weekLabel(wId: string): string {
+  const { start, end } = getWeekRange(wId);
+  const fmt = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+  return `${fmt(start)}-${fmt(end)}`;
+}
+
 function WeeklyTab() {
   const [weekId, setWeekId] = useState(currentWeekId());
   const [tasks, setTasks] = useState<WeeklyTask[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [monthlyGoals, setMonthlyGoals] = useState<MonthlyGoal[]>([]);
+  const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
+  const [milestones, setMilestones] = useState<MilestoneOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+
+  // Load weeks list and milestones once
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/goals?tier=weeks").then((r) => r.json()),
+      fetch("/api/goals?tier=milestones").then((r) => r.json()),
+    ]).then(([weeksJson, msJson]) => {
+      setAvailableWeeks(weeksJson.data ?? []);
+      setMilestones(msJson.data ?? []);
+    });
+  }, []);
 
   const load = useCallback(async () => {
     const month = weekIdToMonth(weekId);
@@ -446,13 +472,17 @@ function WeeklyTab() {
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
           Week
         </label>
-        <input
-          type="text"
+        <select
           value={weekId}
           onChange={(e) => setWeekId(e.target.value)}
-          placeholder="2026-W10"
-          className="w-32 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-        />
+          className="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+        >
+          {availableWeeks.map((w) => (
+            <option key={w} value={w}>
+              {w} &middot; {weekLabel(w)}
+            </option>
+          ))}
+        </select>
         <button
           onClick={copyFromPrevWeek}
           className="rounded bg-yellow-100 px-3 py-1 text-sm text-yellow-800 hover:bg-yellow-200 dark:bg-yellow-900 dark:text-yellow-300"
@@ -531,6 +561,23 @@ function WeeklyTab() {
                     {monthlyGoals.map((g) => (
                       <option key={g.id} value={g.id}>
                         {g.title}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={task.milestoneTitle ?? ""}
+                    onChange={(e) =>
+                      updateTask(task.id, {
+                        milestoneTitle: e.target.value || undefined,
+                      })
+                    }
+                    className="w-40 truncate rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    <option value="">No milestone</option>
+                    {milestones.map((m) => (
+                      <option key={m.title} value={m.title}>
+                        {m.title}
+                        {m.dueOn ? ` (~${m.dueOn})` : ""}
                       </option>
                     ))}
                   </select>

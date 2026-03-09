@@ -63,6 +63,13 @@ export async function deleteMonthlyGoals(month: string): Promise<void> {
   await redis.zrem("goal:months", month);
 }
 
+/** Get all goal week IDs in reverse chronological order. */
+export async function getAllGoalWeekIds(): Promise<string[]> {
+  const redis = getRedis();
+  const ids = await redis.zrange("goal:weeks", 0, -1, { rev: true });
+  return ids as string[];
+}
+
 // --- Weekly Tasks ---
 
 export async function getWeeklyTasks(weekId: string): Promise<WeeklyTask[]> {

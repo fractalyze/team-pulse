@@ -153,6 +153,7 @@ export interface WeeklyTask {
   status: GoalStatus;
   startDate?: string; // "YYYY-MM-DD"
   goalId?: string; // MonthlyGoal.id reference
+  milestoneTitle?: string; // GitHub milestone title (cross-repo milestone matching)
   createdAt: string;
   updatedAt: string;
 }
