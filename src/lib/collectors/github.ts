@@ -10,7 +10,6 @@ import type {
   GitHubMetrics,
   ReviewInfo,
   ReviewHealthMetrics,
-  MilestoneMetadata,
 } from "../types";
 
 function getOctokit(): Octokit {
@@ -419,58 +418,3 @@ export async function collectGitHubMetrics(
   };
 }
 
-/** Collect open milestone metadata from all monitored repos. */
-export async function collectMilestoneMetadata(): Promise<MilestoneMetadata[]> {
-  const octokit = getOctokit();
-
-  const milestonesByTitle = new Map<string, {
-    description: string;
-    dueOn: string | null;
-    repos: string[];
-  }>();
-
-  for (const repo of MONITORED_REPOS) {
-    try {
-      const { data: milestones } = await octokit.issues.listMilestones({
-        owner: ORG,
-        repo,
-        state: "open",
-      });
-
-      for (const ms of milestones) {
-        const existing = milestonesByTitle.get(ms.title);
-        if (existing) {
-          existing.repos.push(repo);
-        } else {
-          milestonesByTitle.set(ms.title, {
-            description: ms.description ?? "",
-            dueOn: ms.due_on ? ms.due_on.slice(0, 10) : null,
-            repos: [repo],
-          });
-        }
-      }
-    } catch (error) {
-      console.warn(`Failed to list milestones for ${repo}:`, error);
-    }
-  }
-
-  const results: MilestoneMetadata[] = [];
-  for (const [title, info] of milestonesByTitle) {
-    results.push({
-      title,
-      description: info.description,
-      dueOn: info.dueOn,
-      repos: info.repos,
-    });
-  }
-
-  // Sort: dueOn first (ascending), then alphabetical
-  results.sort((a, b) => {
-    if (a.dueOn && b.dueOn) return a.dueOn.localeCompare(b.dueOn);
-    if (a.dueOn) return -1;
-    if (b.dueOn) return 1;
-    return a.title.localeCompare(b.title);
-  });
-
-  return results;
-}

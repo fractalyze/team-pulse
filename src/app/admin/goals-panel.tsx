@@ -323,13 +323,6 @@ function MonthlyTab() {
 
 // --- Weekly Tab ---
 
-interface MilestoneOption {
-  title: string;
-  dueOn: string | null;
-  mergedCount: number;
-  openCount: number;
-}
-
 function weekLabel(wId: string): string {
   const { start, end } = getWeekRange(wId);
   const fmt = (d: Date) => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
@@ -342,19 +335,14 @@ function WeeklyTab() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [monthlyGoals, setMonthlyGoals] = useState<MonthlyGoal[]>([]);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
-  const [milestones, setMilestones] = useState<MilestoneOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  // Load weeks list and milestones once
+  // Load weeks list once
   useEffect(() => {
-    Promise.all([
-      fetch("/api/goals?tier=weeks").then((r) => r.json()),
-      fetch("/api/goals?tier=milestones").then((r) => r.json()),
-    ]).then(([weeksJson, msJson]) => {
-      setAvailableWeeks(weeksJson.data ?? []);
-      setMilestones(msJson.data ?? []);
-    });
+    fetch("/api/goals?tier=weeks")
+      .then((r) => r.json())
+      .then((json) => setAvailableWeeks(json.data ?? []));
   }, []);
 
   const load = useCallback(async () => {
@@ -563,24 +551,6 @@ function WeeklyTab() {
                       </option>
                     ))}
                   </select>
-                  <input
-                    list={`ms-list-${task.id}`}
-                    value={task.milestoneTitle ?? ""}
-                    onChange={(e) =>
-                      updateTask(task.id, {
-                        milestoneTitle: e.target.value || undefined,
-                      })
-                    }
-                    placeholder="Milestone"
-                    className="w-40 truncate rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  />
-                  <datalist id={`ms-list-${task.id}`}>
-                    {milestones.map((m) => (
-                      <option key={m.title} value={m.title}>
-                        {m.dueOn ? `~${m.dueOn}` : ""}
-                      </option>
-                    ))}
-                  </datalist>
                   <button
                     onClick={() => removeTask(task.id)}
                     className="text-sm text-red-500 hover:text-red-700"

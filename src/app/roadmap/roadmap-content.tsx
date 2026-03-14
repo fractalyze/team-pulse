@@ -127,7 +127,7 @@ export function RoadmapContent({ data }: RoadmapContentProps) {
               {roadmap.halfYear.period}: {roadmap.halfYear.title}
             </span>
             <span className="text-sm text-gray-500">
-              {roadmap.months.reduce(
+              Monthly Goal {roadmap.months.reduce(
                 (s, m) => s + m.goals.filter((g) => g.status === "done").length,
                 0
               )}

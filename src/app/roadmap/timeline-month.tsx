@@ -51,7 +51,7 @@ export function TimelineMonth({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">{month.progressRate}%</span>
+          <span className="text-sm text-gray-500">Monthly Goal {month.progressRate}%</span>
           {month.isAtRisk && (
             <span
               className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"

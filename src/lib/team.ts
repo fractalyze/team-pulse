@@ -1,13 +1,12 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { Octokit } from "@octokit/rest";
-import { WebClient } from "@slack/web-api";
 import { ORG } from "./config";
 import type { TeamMember } from "./types";
 
 let cachedTeam: TeamMember[] | null = null;
 
-/** Auto-discover team members from GitHub org + Slack workspace. */
+/** Auto-discover team members from GitHub org. */
 export async function getTeam(): Promise<TeamMember[]> {
   if (cachedTeam) return cachedTeam;
 
@@ -36,76 +35,26 @@ export async function getTeam(): Promise<TeamMember[]> {
     return [];
   }
 
-  // 2. Fetch profiles in parallel (for display name + email)
+  // 2. Fetch profiles in parallel (for display name)
   const profiles = await Promise.all(
     members.map((m) =>
       octokit.users.getByUsername({ username: m.login }).then((r) => r.data)
     )
   );
 
-  // 3. Build Slack maps (email→userId + name→userId)
-  const { emailMap, nameMap } = await buildSlackMaps();
-
-  // 4. Assemble team (match by email first, then by display name)
-  const team: TeamMember[] = profiles.map((profile) => {
-    const displayName = profile.name || profile.login;
-    const email = profile.email;
-    let slackId = "TBD";
-    if (email && emailMap.has(email.toLowerCase())) {
-      slackId = emailMap.get(email.toLowerCase())!;
-    } else if (nameMap.has(displayName.toLowerCase())) {
-      slackId = nameMap.get(displayName.toLowerCase())!;
-    }
-
-    return {
-      name: displayName,
-      github: profile.login,
-      slack: slackId,
-    };
-  });
+  // 3. Assemble team
+  const team: TeamMember[] = profiles.map((profile) => ({
+    name: profile.name || profile.login,
+    github: profile.login,
+  }));
 
   console.log(
     `Auto-discovered ${team.length} team members:`,
-    team.map((m) => `${m.name} (${m.github}, slack=${m.slack !== "TBD" ? "linked" : "TBD"})`).join(", ")
+    team.map((m) => `${m.name} (${m.github})`).join(", ")
   );
 
   cachedTeam = team;
   return team;
-}
-
-/** Build maps of email→userId and displayName→userId from Slack workspace. */
-async function buildSlackMaps(): Promise<{
-  emailMap: Map<string, string>;
-  nameMap: Map<string, string>;
-}> {
-  const emailMap = new Map<string, string>();
-  const nameMap = new Map<string, string>();
-  const token = process.env.SLACK_BOT_TOKEN;
-  if (!token) return { emailMap, nameMap };
-
-  const client = new WebClient(token);
-  try {
-    let cursor: string | undefined;
-    do {
-      const res = await client.users.list({ limit: 200, cursor });
-      for (const user of res.members ?? []) {
-        if (user.deleted || user.is_bot || !user.id) continue;
-        const email = user.profile?.email;
-        if (email) {
-          emailMap.set(email.toLowerCase(), user.id);
-        }
-        const realName = user.real_name ?? user.profile?.real_name;
-        if (realName) {
-          nameMap.set(realName.toLowerCase(), user.id);
-        }
-      }
-      cursor = res.response_metadata?.next_cursor || undefined;
-    } while (cursor);
-  } catch (error) {
-    console.warn("Failed to list Slack users for auto-discovery:", error);
-  }
-
-  return { emailMap, nameMap };
 }
 
 /** Clear cached team (useful for testing). */

@@ -3,7 +3,7 @@
 import { Redis } from "@upstash/redis";
 import type { WeeklySnapshot, DashboardSummary } from "../types";
 import { getPreviousWeekId, getWeekRange } from "../week";
-import { buildCrossRepoMilestones, computeDelta } from "../generators/metrics";
+import { computeDelta } from "../generators/metrics";
 
 export function getRedis(): Redis {
   const url = process.env.KV_REST_API_URL;
@@ -61,15 +61,6 @@ function backfillSnapshot(snapshot: WeeklySnapshot): WeeklySnapshot {
       thisWeekGoal: null,
       nextHardDeadline: null,
     },
-    crossRepoMilestones:
-      snapshot.crossRepoMilestones?.some(
-        (ms) => ms.mergedCount + ms.openCount + (ms.draftCount ?? 0) > 0,
-      )
-        ? snapshot.crossRepoMilestones.map((ms) => ({
-            ...ms,
-            draftCount: ms.draftCount ?? 0,
-          }))
-        : buildCrossRepoMilestones(snapshot.github, []),
   };
 }
 

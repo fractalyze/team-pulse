@@ -15,7 +15,7 @@ import {
   deleteWeeklyTasks,
   getAllGoalWeekIds,
 } from "@/lib/store/goals";
-import { getAllWeekIds, getSnapshot } from "@/lib/store/kv";
+import { getAllWeekIds } from "@/lib/store/kv";
 import { getTeam } from "@/lib/team";
 import { getWeekId } from "@/lib/week";
 import type { HalfYearObjective, MonthlyGoal, WeeklyTask } from "@/lib/types";
@@ -85,18 +85,6 @@ export async function GET(request: Request) {
     const allWeeks = [...new Set([currentWk, ...goalWeeks, ...snapshotWeeks])];
     allWeeks.sort().reverse();
     return NextResponse.json({ data: allWeeks });
-  }
-
-  if (tier === "milestones") {
-    const weekIds = await getAllWeekIds();
-    const snapshot = weekIds.length > 0 ? await getSnapshot(weekIds[0]) : null;
-    const milestones = (snapshot?.crossRepoMilestones ?? []).map((m) => ({
-      title: m.title,
-      dueOn: m.dueOn,
-      mergedCount: m.mergedCount,
-      openCount: m.openCount,
-    }));
-    return NextResponse.json({ data: milestones });
   }
 
   if (tier === "team") {

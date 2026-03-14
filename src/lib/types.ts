@@ -5,7 +5,6 @@
 export interface TeamMember {
   name: string;
   github: string;
-  slack: string;
 }
 
 // --- GitHub PR Data ---
@@ -154,7 +153,6 @@ export interface WeeklyTask {
   status: GoalStatus;
   startDate?: string; // "YYYY-MM-DD"
   goalId?: string; // MonthlyGoal.id reference
-  milestoneTitle?: string; // GitHub milestone title (cross-repo milestone matching)
   createdAt: string;
   updatedAt: string;
 }
@@ -225,40 +223,6 @@ export interface PropagationEntry {
   propagationScore: 0 | 1 | 2 | 3;
 }
 
-// --- Cross-Repo Milestones ---
-
-export interface MilestoneMetadata {
-  title: string;
-  description: string;
-  dueOn: string | null;
-  repos: string[];
-}
-
-export interface MilestonePRRef {
-  repo: string;
-  number: number;
-  title: string;
-  author: string;
-  url: string;
-  state: "open" | "merged" | "closed";
-  draft: boolean;
-}
-
-export interface RepoMilestoneDetail {
-  repo: string;
-  prs: MilestonePRRef[];
-}
-
-export interface CrossRepoMilestone {
-  title: string;
-  description: string;
-  dueOn: string | null;
-  repos: RepoMilestoneDetail[];
-  mergedCount: number;
-  openCount: number;
-  draftCount: number;
-}
-
 // --- Weekly Snapshot (stored in KV) ---
 
 export interface WeeklySnapshot {
@@ -269,139 +233,6 @@ export interface WeeklySnapshot {
   contextSync: ContextSyncMetrics;
   okr?: OKRMetrics;
   propagation?: PropagationEntry[];
-  crossRepoMilestones?: CrossRepoMilestone[];
-}
-
-// --- Claude Code Usage ---
-
-export interface ClaudeCodeTokens {
-  input: number;
-  output: number;
-  cache_creation: number;
-  cache_read: number;
-}
-
-export interface ClaudeCodeModelUsage {
-  model: string;
-  tokens: ClaudeCodeTokens;
-  estimated_cost: { amount: number; currency: string };
-}
-
-export interface ClaudeCodeToolAction {
-  accepted: number;
-  rejected: number;
-}
-
-export interface ClaudeCodeUserRecord {
-  actor: { type: string; email_address?: string; api_key_name?: string };
-  date: string;
-  terminal_type: string;
-  customer_type: string;
-  organization_id: string;
-  core_metrics: {
-    num_sessions: number;
-    lines_of_code: { added: number; removed: number };
-    commits_by_claude_code: number;
-    pull_requests_by_claude_code: number;
-  };
-  tool_actions: Record<string, ClaudeCodeToolAction>;
-  model_breakdown: ClaudeCodeModelUsage[];
-}
-
-export interface ClaudeCodeDailySnapshot {
-  date: string;
-  collectedAt: string;
-  records: ClaudeCodeUserRecord[];
-  totals: {
-    costCents: number;
-    sessions: number;
-    locAdded: number;
-    locRemoved: number;
-    commits: number;
-    pullRequests: number;
-  };
-}
-
-export interface ClaudeCodeUserAggregation {
-  email: string;
-  costCents: number;
-  sessions: number;
-  locAdded: number;
-  locRemoved: number;
-  commits: number;
-  pullRequests: number;
-  acceptanceRate: number;
-  cacheReadRatio: number;
-  modelBreakdown: { model: string; costCents: number }[];
-}
-
-export interface ClaudeCodeModelAggregation {
-  model: string;
-  costCents: number;
-  tokens: ClaudeCodeTokens;
-}
-
-export interface ClaudeCodeUsageSummary {
-  days: ClaudeCodeDailySnapshot[];
-  periodDays: number;
-  totals: {
-    costCents: number;
-    sessions: number;
-    locAdded: number;
-    locRemoved: number;
-    commits: number;
-    pullRequests: number;
-  };
-  costDeltaCents: number | null;
-  byUser: ClaudeCodeUserAggregation[];
-  byModel: ClaudeCodeModelAggregation[];
-  dailyCosts: { date: string; costCents: number }[];
-  tokenBreakdown: {
-    input: number;
-    output: number;
-    cacheCreation: number;
-    cacheRead: number;
-  };
-  perUserDaily: {
-    email: string;
-    dailyCosts: { date: string; costCents: number }[];
-  }[];
-}
-
-// --- OTel Ingestion Types ---
-
-/** OTel 메트릭 파서가 반환하는 단일 데이터 포인트. */
-export interface ParsedOtelEntry {
-  email: string;
-  date: string; // YYYY-MM-DD (timeUnixNano에서 변환)
-  metric: string; // e.g. "claude_code.token.usage"
-  value: number;
-  attributes: Record<string, string>; // e.g. { type: "input", model: "..." }
-}
-
-/** 단일 사용자의 하루치 누적 OTel 메트릭. KV 저장 단위. */
-export interface OtelUserDayMetrics {
-  email: string;
-  date: string;
-  lastUpdated: string;
-  costCents: number;
-  tokens: ClaudeCodeTokens; // 기존 타입 재사용
-  sessions: number;
-  locAdded: number;
-  locRemoved: number;
-  commits: number;
-  pullRequests: number;
-  toolAccepted: number;
-  toolRejected: number;
-  modelCosts: Record<string, number>;
-  modelTokens: Record<string, ClaudeCodeTokens>;
-}
-
-/** Admin 패널용 OTel 연결 상태. */
-export interface OtelConnectionStatus {
-  email: string;
-  lastSeen: string;
-  totalDataPoints: number;
 }
 
 // --- Delta (week-over-week comparison) ---

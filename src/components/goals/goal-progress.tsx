@@ -191,7 +191,7 @@ export function GoalProgress({
               {monthLabel} {monthDone}/{monthlyGoals.length}
             </span>
             <span>
-              Week {weekDone}/{weekTotal}
+              Weekly Goal {weekDone}/{weekTotal}
             </span>
             <span className="text-lg font-bold text-gray-900 dark:text-white">
               {halfPct}%
@@ -232,11 +232,11 @@ export function GoalProgress({
               )}
               <div className="mt-3 flex items-center gap-4 text-sm text-gray-500">
                 <span>
-                  {allMonthlyDone}/{allMonthlyTotal} goals done
+                  Monthly Goal {allMonthlyDone}/{allMonthlyTotal}
                 </span>
                 <span>|</span>
                 <span>
-                  Week {weekDone}/{weekTotal} ({weekPct}%)
+                  Weekly Goal {weekDone}/{weekTotal} ({weekPct}%)
                 </span>
               </div>
             </div>
@@ -248,7 +248,7 @@ export function GoalProgress({
               Goals
             </h2>
             <div className="text-sm text-gray-500">
-              Week {weekDone}/{weekTotal}
+              Weekly Goal {weekDone}/{weekTotal}
             </div>
           </div>
         )}

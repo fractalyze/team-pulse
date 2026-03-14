@@ -1,9 +1,9 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { NextResponse } from "next/server";
-import { collectGitHubMetrics, collectMilestoneMetadata } from "@/lib/collectors/github";
+import { collectGitHubMetrics } from "@/lib/collectors/github";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
-import { assembleSnapshot, buildCrossRepoMilestones } from "@/lib/generators/metrics";
+import { assembleSnapshot } from "@/lib/generators/metrics";
 import { saveSnapshot } from "@/lib/store/kv";
 import { getWeekId } from "@/lib/week";
 import { getTeam } from "@/lib/team";
@@ -22,24 +22,18 @@ export async function GET(request: Request) {
 
     const team = await getTeam();
 
-    const [github, contextSync, milestonesMeta] = await Promise.all([
+    const [github, contextSync] = await Promise.all([
       collectGitHubMetrics(weekId, team),
       collectContextSyncMetrics(weekId),
-      collectMilestoneMetadata(),
     ]);
 
-    const crossRepoMilestones = buildCrossRepoMilestones(github, milestonesMeta);
-
-    // Save snapshot with empty OKR (OKR is collected in weekly-pulse only)
     const snapshot = assembleSnapshot(weekId, github, contextSync, {
       weekId,
       objectives: [],
       thisWeekGoal: null,
       nextHardDeadline: null,
-    }, crossRepoMilestones);
+    });
     await saveSnapshot(snapshot);
-
-    // Claude Code usage is collected via OTel (real-time push from Claude Code)
 
     return NextResponse.json({
       status: "success",

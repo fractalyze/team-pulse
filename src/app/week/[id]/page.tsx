@@ -5,7 +5,6 @@ import Link from "next/link";
 import { getDashboardSummary } from "@/lib/store/kv";
 import { GoalProgressServer } from "@/components/goals/goal-progress-server";
 import { GoalProgressSkeleton } from "@/components/goals/goal-progress-skeleton";
-import { CrossRepoMilestones } from "@/components/milestones/cross-repo-milestones";
 import { DashboardContent } from "../../dashboard-content";
 import { WeekNav } from "../../week-nav";
 
@@ -40,13 +39,6 @@ export default async function WeekPage({ params }: WeekPageProps) {
         <GoalProgressServer weekId={id} />
       </Suspense>
       <DashboardContent summary={summary} />
-
-      {/* Team Milestones (cross-repo) */}
-      {(summary.current.crossRepoMilestones ?? []).length > 0 && (
-        <CrossRepoMilestones
-          milestones={summary.current.crossRepoMilestones!}
-        />
-      )}
     </div>
   );
 }

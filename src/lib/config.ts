@@ -17,12 +17,6 @@ export const MONITORED_REPOS = [
 // Notion IDs
 export const CONTEXT_SYNC_DB = "2ffa84235e5680d2adf2fe3b44eddf32";
 
-// Slack
-export const SLACK_CHANNEL = process.env.SLACK_CHANNEL_ID ?? "";
-
-// Calendar
-export const WEEKLY_SYNC_EVENT_NAME = "Weekly Compiler Meeting";
-
 // Dashboard
 export const DASHBOARD_URL =
   process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "https://team-pulse.vercel.app";
