@@ -5,10 +5,11 @@
 import { useState } from "react";
 import { MetricCard } from "@/components/charts/metric-card";
 import { PRActivityChart } from "@/components/charts/pr-activity";
-import type { DashboardSummary } from "@/lib/types";
+import type { DashboardSummary, WeeklySnapshot, PRInfo, ProjectItem, GoalProgressSummary } from "@/lib/types";
 
 interface DashboardContentProps {
   summary: DashboardSummary;
+  previousSnapshot?: WeeklySnapshot | null;
 }
 
 function reviewLatencyColor(
@@ -37,10 +38,57 @@ function actionItemsColor(
   return "red";
 }
 
-export function DashboardContent({ summary }: DashboardContentProps) {
+/** Count business days (Mon-Fri) between two dates. */
+function businessDaysBetween(start: Date, end: Date): number {
+  let count = 0;
+  const d = new Date(start);
+  while (d < end) {
+    const day = d.getUTCDay();
+    if (day !== 0 && day !== 6) count++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return count;
+}
+
+/** Get stale color for review queue PRs (business days). */
+function reviewStaleColor(bizDays: number): string {
+  if (bizDays >= 5) return "text-red-600";
+  if (bizDays >= 3) return "text-yellow-600";
+  return "text-gray-700 dark:text-gray-300";
+}
+
+/** Get stale color for draft queue PRs (business days). */
+function draftStaleColor(bizDays: number): string {
+  if (bizDays >= 10) return "text-red-600";
+  if (bizDays >= 5) return "text-yellow-600";
+  return "text-gray-700 dark:text-gray-300";
+}
+
+/** Status badge for project items. */
+function StatusBadge({ status }: { status: string | null }) {
+  const colors: Record<string, string> = {
+    Merged: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+    "In Review": "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+    Draft: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
+    Closed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+  };
+  const s = status ?? "Unknown";
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${colors[s] ?? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"}`}>
+      {s}
+    </span>
+  );
+}
+
+export function DashboardContent({ summary, previousSnapshot }: DashboardContentProps) {
   const { current, delta } = summary;
   const { github, contextSync } = current;
+  const project = current.project;
+  const previousProject = previousSnapshot?.project ?? null;
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const [retroExpanded, setRetroExpanded] = useState(false);
+  const [goalHealthExpanded, setGoalHealthExpanded] = useState(false);
+  const [individualExpanded, setIndividualExpanded] = useState(false);
 
   const repoCount = github.repos.filter((r) => r.totalMerged > 0).length;
   const avgLeadTime = github.reviewHealth.avgLeadTimeHours;
@@ -65,17 +113,28 @@ export function DashboardContent({ summary }: DashboardContentProps) {
   const doneActions = totalActions - pendingActions;
 
   const allMergedPRs = github.repos.flatMap((r) => r.merged);
-  const openPRs = github.repos
-    .flatMap((r) => r.open)
-    .map((pr) => {
-      const daysOpen = Math.floor(
-        (Date.now() - new Date(pr.createdAt).getTime()) / 86400000
-      );
-      return { ...pr, daysOpen };
-    })
-    .sort((a, b) => b.daysOpen - a.daysOpen);
+  const allOpenPRs = github.repos.flatMap((r) => r.open);
 
-  // Unreviewed merged PRs (based on actual review API data)
+  // Split into Review Queue (non-draft) and Draft Queue
+  const now = new Date();
+  const reviewPRs = allOpenPRs
+    .filter((pr) => !pr.draft)
+    .map((pr) => {
+      const refDate = new Date(pr.readyForReviewAt ?? pr.createdAt);
+      const bizDays = businessDaysBetween(refDate, now);
+      return { ...pr, bizDays };
+    })
+    .sort((a, b) => b.bizDays - a.bizDays);
+
+  const draftPRs = allOpenPRs
+    .filter((pr) => pr.draft)
+    .map((pr) => {
+      const bizDays = businessDaysBetween(new Date(pr.createdAt), now);
+      return { ...pr, bizDays };
+    })
+    .sort((a, b) => b.bizDays - a.bizDays);
+
+  // Unreviewed merged PRs
   const unreviewedKeys = new Set(github.reviewHealth.unreviewedPRKeys ?? []);
   const unreviewedPRs = allMergedPRs.filter(
     (pr) => unreviewedKeys.has(`${pr.repo}#${pr.number}`)
@@ -87,6 +146,14 @@ export function DashboardContent({ summary }: DashboardContentProps) {
 
   const toggle = (card: string) =>
     setExpandedCard(expandedCard === card ? null : card);
+
+  // Week-over-Week delta for goals
+  const previousGoalMap = new Map<string, GoalProgressSummary>();
+  if (previousProject) {
+    for (const g of previousProject.goalProgress) {
+      previousGoalMap.set(g.goalName, g);
+    }
+  }
 
   return (
     <>
@@ -129,14 +196,10 @@ export function DashboardContent({ summary }: DashboardContentProps) {
         </div>
         <div className="cursor-pointer" onClick={() => toggle("open")}>
           <MetricCard
-            title="PRs Open"
+            title="PR Queue"
             value={github.totalOpen}
             delta={delta?.prsOpenDelta}
-            subtitle={
-              github.avgLeadTimeDays !== null
-                ? `avg ${github.avgLeadTimeDays}d lead time`
-                : undefined
-            }
+            subtitle={`${reviewPRs.length} in review · ${draftPRs.length} draft`}
             color="yellow"
           />
         </div>
@@ -192,11 +255,11 @@ export function DashboardContent({ summary }: DashboardContentProps) {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-gray-400">&mdash;</span>
                       )}
                     </td>
                     <td className="px-2 py-1 text-right text-gray-500">
-                      {pr.leadTimeDays !== null ? `${pr.leadTimeDays}d` : "—"}
+                      {pr.leadTimeDays !== null ? `${pr.leadTimeDays}d` : "&mdash;"}
                     </td>
                   </tr>
                 ))}
@@ -269,7 +332,6 @@ export function DashboardContent({ summary }: DashboardContentProps) {
               </p>
             </div>
           </div>
-          {/* Missed reviews table: PR → who didn't review */}
           {missedReviews.length > 0 && (
             <div className="mb-4">
               <h3 className="mb-2 text-sm font-semibold text-yellow-600">
@@ -317,7 +379,6 @@ export function DashboardContent({ summary }: DashboardContentProps) {
               </table>
             </div>
           )}
-          {/* Per-reviewer table */}
           {reviewerEntries.length > 0 && (
             <table className="w-full text-sm">
               <thead>
@@ -391,7 +452,7 @@ export function DashboardContent({ summary }: DashboardContentProps) {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-gray-400">&mdash;</span>
                       )}
                     </td>
                   </tr>
@@ -406,64 +467,31 @@ export function DashboardContent({ summary }: DashboardContentProps) {
         </div>
       )}
 
-      {/* Expanded: Open PRs (Review Queue) */}
-      {expandedCard === "open" && openPRs.length > 0 && (
+      {/* Expanded: PR Queue (Review Queue + Draft Queue) */}
+      {expandedCard === "open" && (reviewPRs.length > 0 || draftPRs.length > 0) && (
         <div className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
-          <h2 className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">
-            Review Queue ({openPRs.length} open)
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">PR</th>
-                  <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">Author</th>
-                  <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Age</th>
-                  <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Reviewers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openPRs.map((pr) => {
-                  const ageColor =
-                    pr.daysOpen >= 5
-                      ? "text-red-600"
-                      : pr.daysOpen >= 3
-                        ? "text-yellow-600"
-                        : "text-gray-700 dark:text-gray-300";
-                  return (
-                    <tr key={`${pr.repo}-${pr.number}`} className="border-b border-gray-100 dark:border-gray-800">
-                      <td className="px-2 py-1">
-                        <a href={pr.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                          {pr.repo}#{pr.number}
-                        </a>
-                        <span className="ml-2 text-gray-500">
-                          {pr.title.slice(0, 40)}{pr.title.length > 40 ? "..." : ""}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{pr.author}</td>
-                      <td className={`px-2 py-1 text-right font-medium ${ageColor}`}>{pr.daysOpen}d</td>
-                      <td className="px-2 py-1">
-                        {pr.reviewers.length > 0 ? (
-                          <div className="flex flex-wrap justify-end gap-1">
-                            {pr.reviewers.map((r) => (
-                              <span
-                                key={r}
-                                className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
-                              >
-                                {r}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="block text-right text-gray-400">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {/* Review Queue */}
+          {reviewPRs.length > 0 && (
+            <div className="mb-6">
+              <h2 className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">
+                Review Queue ({reviewPRs.length})
+              </h2>
+              <div className="overflow-x-auto">
+                <PRQueueTable prs={reviewPRs} staleColorFn={reviewStaleColor} />
+              </div>
+            </div>
+          )}
+          {/* Draft Queue */}
+          {draftPRs.length > 0 && (
+            <div>
+              <h2 className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">
+                Draft Queue ({draftPRs.length})
+              </h2>
+              <div className="overflow-x-auto">
+                <PRQueueTable prs={draftPRs} staleColorFn={draftStaleColor} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -486,7 +514,7 @@ export function DashboardContent({ summary }: DashboardContentProps) {
                       {note.actionItems.map((item, i) => (
                         <div key={i} className="flex items-start gap-2 text-sm">
                           <span className={`mt-0.5 ${item.done ? "text-green-500" : "text-red-400"}`}>
-                            {item.done ? "✓" : "○"}
+                            {item.done ? "\u2713" : "\u25CB"}
                           </span>
                           <span className={item.done ? "text-gray-400 line-through" : "text-gray-700 dark:text-gray-300"}>
                             {item.assignee && (
@@ -504,6 +532,161 @@ export function DashboardContent({ summary }: DashboardContentProps) {
             </div>
           ) : (
             <p className="text-sm text-gray-500">No action items this week.</p>
+          )}
+        </div>
+      )}
+
+      {/* 3a. Weekly Retro Summary */}
+      {project && project.items.length > 0 && (
+        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
+          <button
+            onClick={() => setRetroExpanded(!retroExpanded)}
+            className="flex w-full items-center justify-between p-4"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Weekly Retro: {project.sprint}
+            </h2>
+            <span className="text-sm text-gray-500">
+              {retroExpanded ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {retroExpanded && (
+            <div className="space-y-4 px-4 pb-4">
+              {Object.entries(project.byGoal).map(([goal, items]) => (
+                <div key={goal} className="rounded border border-gray-200 p-3 dark:border-gray-700">
+                  <h3 className="mb-2 text-sm font-bold uppercase text-gray-500">
+                    GOAL: {goal}
+                  </h3>
+                  <RetroGoalSection items={items} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3b. Goal Health */}
+      {project && project.goalProgress.length > 0 && (
+        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
+          <button
+            onClick={() => setGoalHealthExpanded(!goalHealthExpanded)}
+            className="flex w-full items-center justify-between p-4"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Goal Health
+            </h2>
+            <span className="text-sm text-gray-500">
+              {goalHealthExpanded ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {goalHealthExpanded && (
+            <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
+              {project.goalProgress.map((goal) => {
+                const prev = previousGoalMap.get(goal.goalName);
+                const mergedDelta = prev ? goal.mergedCount - prev.mergedCount : null;
+                const inReviewDelta = prev ? goal.inReviewCount - prev.inReviewCount : null;
+                return (
+                  <div key={goal.goalName} className="rounded border border-gray-200 p-3 dark:border-gray-700">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {goal.goalName}
+                      </h3>
+                      <span className="text-sm font-bold text-blue-600">{goal.progressPercent}%</span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="mb-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div
+                        className="h-full rounded-full bg-green-500"
+                        style={{ width: `${goal.progressPercent}%` }}
+                      />
+                    </div>
+                    {/* Status distribution */}
+                    <div className="flex gap-3 text-xs text-gray-500">
+                      <span className="text-green-600">
+                        {goal.mergedCount} merged
+                        {mergedDelta !== null && mergedDelta !== 0 && (
+                          <span className={mergedDelta > 0 ? "ml-1 text-green-500" : "ml-1 text-red-500"}>
+                            {mergedDelta > 0 ? `+${mergedDelta}` : mergedDelta}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-blue-600">
+                        {goal.inReviewCount} in review
+                        {inReviewDelta !== null && inReviewDelta !== 0 && (
+                          <span className={inReviewDelta > 0 ? "ml-1 text-blue-500" : "ml-1 text-red-500"}>
+                            {inReviewDelta > 0 ? `+${inReviewDelta}` : inReviewDelta}
+                          </span>
+                        )}
+                      </span>
+                      <span>{goal.draftCount} draft</span>
+                      {goal.closedCount > 0 && <span className="text-red-500">{goal.closedCount} closed</span>}
+                    </div>
+                    {/* Assignees */}
+                    {goal.assignees.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {goal.assignees.map((a) => (
+                          <span key={a} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3c. Individual Summary */}
+      {project && Object.keys(project.byAssignee).length > 0 && (
+        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
+          <button
+            onClick={() => setIndividualExpanded(!individualExpanded)}
+            className="flex w-full items-center justify-between p-4"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Individual Summary
+            </h2>
+            <span className="text-sm text-gray-500">
+              {individualExpanded ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {individualExpanded && (
+            <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
+              {Object.entries(project.byAssignee).map(([assignee, items]) => {
+                const merged = items.filter((i) => i.merged).length;
+                const inReview = items.filter((i) => i.status === "In Review").length;
+                const draft = items.filter((i) => i.status === "Draft").length;
+                // Group by goal
+                const goalGroups = new Map<string, number>();
+                for (const item of items) {
+                  const g = item.monthlyGoal ?? "Ungrouped";
+                  goalGroups.set(g, (goalGroups.get(g) ?? 0) + 1);
+                }
+                return (
+                  <div key={assignee} className="rounded border border-gray-200 p-3 dark:border-gray-700">
+                    <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
+                      {assignee}
+                    </h3>
+                    <div className="mb-2 flex gap-3 text-xs">
+                      <span className="text-green-600">{merged} merged</span>
+                      <span className="text-blue-600">{inReview} in review</span>
+                      <span className="text-gray-500">{draft} draft</span>
+                    </div>
+                    <div className="space-y-1">
+                      {[...goalGroups.entries()].map(([goal, count]) => (
+                        <div key={goal} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-600 dark:text-gray-400">{goal}</span>
+                          <span className="font-medium text-gray-700 dark:text-gray-300">{count} items</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
@@ -579,7 +762,7 @@ export function DashboardContent({ summary }: DashboardContentProps) {
                       {note.actionItems.map((item, i) => (
                         <div key={i} className="flex items-center gap-1.5 text-sm">
                           <span className={item.done ? "text-green-500" : "text-gray-400"}>
-                            {item.done ? "✓" : "○"}
+                            {item.done ? "\u2713" : "\u25CB"}
                           </span>
                           <span className={item.done ? "text-gray-400 line-through" : "text-gray-700 dark:text-gray-300"}>
                             {item.assignee && (
@@ -603,5 +786,98 @@ export function DashboardContent({ summary }: DashboardContentProps) {
         Last collected: {new Date(current.collectedAt).toLocaleString("ko-KR")}
       </p>
     </>
+  );
+}
+
+/** PR Queue table used by both Review Queue and Draft Queue. */
+function PRQueueTable({
+  prs,
+  staleColorFn,
+}: {
+  prs: (PRInfo & { bizDays: number })[];
+  staleColorFn: (bizDays: number) => string;
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-gray-200 dark:border-gray-700">
+          <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">PR</th>
+          <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">Author</th>
+          <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Age (biz days)</th>
+          <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Reviewers</th>
+        </tr>
+      </thead>
+      <tbody>
+        {prs.map((pr) => (
+          <tr key={`${pr.repo}-${pr.number}`} className="border-b border-gray-100 dark:border-gray-800">
+            <td className="px-2 py-1">
+              <a href={pr.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                {pr.repo}#{pr.number}
+              </a>
+              <span className="ml-2 text-gray-500">
+                {pr.title.slice(0, 40)}{pr.title.length > 40 ? "..." : ""}
+              </span>
+            </td>
+            <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{pr.author}</td>
+            <td className={`px-2 py-1 text-right font-medium ${staleColorFn(pr.bizDays)}`}>
+              {pr.bizDays}d
+            </td>
+            <td className="px-2 py-1">
+              {pr.reviewers.length > 0 ? (
+                <div className="flex flex-wrap justify-end gap-1">
+                  {pr.reviewers.map((r) => (
+                    <span
+                      key={r}
+                      className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+                    >
+                      {r}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="block text-right text-gray-400">&mdash;</span>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Retro goal section: group items by assignee within a goal. */
+function RetroGoalSection({ items }: { items: ProjectItem[] }) {
+  const byAssignee = new Map<string, ProjectItem[]>();
+  for (const item of items) {
+    const assignees = item.assignees.length > 0 ? item.assignees : [item.author ?? "unassigned"];
+    for (const a of assignees) {
+      if (!byAssignee.has(a)) byAssignee.set(a, []);
+      byAssignee.get(a)!.push(item);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {[...byAssignee.entries()].map(([assignee, assigneeItems]) => (
+        <div key={assignee} className="ml-2">
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{assignee}:</p>
+          <div className="ml-4 space-y-0.5">
+            {assigneeItems.map((item) => (
+              <div key={item.id} className="flex items-center gap-2 text-sm">
+                <StatusBadge status={item.status} />
+                {item.url ? (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    {item.repo ? `${item.repo}#${item.number}` : "link"}
+                  </a>
+                ) : null}
+                <span className="text-gray-600 dark:text-gray-400">
+                  &ldquo;{item.title.slice(0, 50)}{item.title.length > 50 ? "..." : ""}&rdquo;
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

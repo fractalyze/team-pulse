@@ -6,6 +6,7 @@ import type {
   GitHubMetrics,
   ContextSyncMetrics,
   OKRMetrics,
+  ProjectMetrics,
 } from "../types";
 
 /** Compute week-over-week delta between current and previous snapshots. */
@@ -42,12 +43,15 @@ export function assembleSnapshot(
   github: GitHubMetrics,
   contextSync: ContextSyncMetrics,
   okr: OKRMetrics,
+  project?: ProjectMetrics,
 ): WeeklySnapshot {
-  return {
+  const snapshot: WeeklySnapshot = {
     weekId,
     collectedAt: new Date().toISOString(),
     github,
     contextSync,
     okr,
   };
+  if (project) snapshot.project = project;
+  return snapshot;
 }

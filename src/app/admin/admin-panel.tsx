@@ -36,6 +36,14 @@ const TRIGGERS: Trigger[] = [
     group: "collect",
   },
   {
+    id: "projects",
+    label: "GitHub Projects",
+    description: "Sprint items, monthly goals, status from Projects",
+    actions: ["collect-projects"],
+    saveActions: ["save-projects"],
+    group: "collect",
+  },
+  {
     id: "notion",
     label: "Notion Context Sync",
     description: "Meeting notes, action items, decisions",

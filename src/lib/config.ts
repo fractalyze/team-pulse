@@ -17,6 +17,9 @@ export const MONITORED_REPOS = [
 // Notion IDs
 export const CONTEXT_SYNC_DB = "2ffa84235e5680d2adf2fe3b44eddf32";
 
+// GitHub Projects
+export const PROJECT_NUMBER = 6;
+
 // Dashboard
 export const DASHBOARD_URL =
   process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "https://team-pulse.vercel.app";

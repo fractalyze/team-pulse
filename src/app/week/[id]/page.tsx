@@ -2,7 +2,8 @@
 
 import { Suspense } from "react";
 import Link from "next/link";
-import { getDashboardSummary } from "@/lib/store/kv";
+import { getDashboardSummary, getSnapshot } from "@/lib/store/kv";
+import { getPreviousWeekId } from "@/lib/week";
 import { GoalProgressServer } from "@/components/goals/goal-progress-server";
 import { GoalProgressSkeleton } from "@/components/goals/goal-progress-skeleton";
 import { DashboardContent } from "../../dashboard-content";
@@ -32,13 +33,22 @@ export default async function WeekPage({ params }: WeekPageProps) {
     );
   }
 
+  // Fetch previous week snapshot for Week-over-Week comparison
+  let previousSnapshot = null;
+  try {
+    const prevWeekId = getPreviousWeekId(id);
+    previousSnapshot = await getSnapshot(prevWeekId);
+  } catch {
+    // Previous week data not available
+  }
+
   return (
     <div className="space-y-6">
       <WeekNav summary={summary} />
       <Suspense fallback={<GoalProgressSkeleton />}>
         <GoalProgressServer weekId={id} />
       </Suspense>
-      <DashboardContent summary={summary} />
+      <DashboardContent summary={summary} previousSnapshot={previousSnapshot} />
     </div>
   );
 }

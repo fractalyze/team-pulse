@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { collectGitHubMetrics } from "@/lib/collectors/github";
+import { collectProjectMetrics } from "@/lib/collectors/github-projects";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { assembleSnapshot, computeDelta } from "@/lib/generators/metrics";
 import { saveSnapshot, getSnapshot } from "@/lib/store/kv";
@@ -134,7 +135,65 @@ export async function POST(request: Request) {
     }
   }
 
+  if (actions.includes("collect-projects")) {
+    try {
+      const project = await collectProjectMetrics(weekId);
+      return NextResponse.json({
+        status: "success",
+        source: "projects",
+        weekId,
+        data: {
+          sprint: project.sprint,
+          totalItems: project.items.length,
+          byStatus: project.byStatus,
+          goalProgress: project.goalProgress.map((g) => ({
+            goalName: g.goalName,
+            totalItems: g.totalItems,
+            mergedCount: g.mergedCount,
+            progressPercent: g.progressPercent,
+          })),
+        },
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { source: "projects", error: String(e) },
+        { status: 500 }
+      );
+    }
+  }
+
   // --- Individual save (collect + merge into existing snapshot) ---
+
+  if (actions.includes("save-projects")) {
+    try {
+      const project = await collectProjectMetrics(weekId);
+      const existing = await getSnapshot(weekId);
+      if (!existing) {
+        return NextResponse.json(
+          { source: "projects", error: "No existing snapshot. Run Save GitHub first." },
+          { status: 400 }
+        );
+      }
+      const snapshot: WeeklySnapshot = {
+        ...existing,
+        collectedAt: new Date().toISOString(),
+        project,
+      };
+      await saveSnapshot(snapshot);
+      return NextResponse.json({
+        status: "saved",
+        source: "projects",
+        weekId,
+        totalItems: project.items.length,
+        goals: project.goalProgress.length,
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { source: "projects", error: String(e) },
+        { status: 500 }
+      );
+    }
+  }
 
   if (actions.includes("save-github")) {
     try {
@@ -213,9 +272,10 @@ export async function POST(request: Request) {
   try {
     const team = await getTeam();
 
-    const [github, contextSync] = await Promise.all([
+    const [github, contextSync, project] = await Promise.all([
       collectGitHubMetrics(weekId, team),
       collectContextSyncMetrics(weekId),
+      collectProjectMetrics(weekId),
     ]);
 
     const okr = {
@@ -232,6 +292,7 @@ export async function POST(request: Request) {
       github,
       contextSync,
       okr,
+      project,
     );
     const delta = computeDelta(currentSnapshot, previousSnapshot);
 
@@ -248,6 +309,7 @@ export async function POST(request: Request) {
       },
       contextSync: { sessions: contextSync.totalSessions },
       okr: { objectives: okr.objectives.length },
+      project: { items: project.items.length, goals: project.goalProgress.length },
       delta,
     };
     results.team = team.map((m) => ({

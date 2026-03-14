@@ -27,6 +27,7 @@ export interface PRInfo {
   changedFiles: number;
   milestone: string | null;
   draft: boolean;
+  readyForReviewAt: string | null;
 }
 
 export interface RepoPRSummary {
@@ -223,6 +224,46 @@ export interface PropagationEntry {
   propagationScore: 0 | 1 | 2 | 3;
 }
 
+// --- GitHub Projects Data ---
+
+export interface ProjectItem {
+  id: string;
+  type: "ISSUE" | "PULL_REQUEST" | "DRAFT_ISSUE";
+  title: string;
+  url: string | null;
+  repo: string | null;
+  number: number | null;
+  author: string | null;
+  assignees: string[];
+  sprint: string | null;
+  monthlyGoal: string | null;
+  status: string | null;
+  level: string | null;
+  merged: boolean;
+  mergedAt: string | null;
+}
+
+export interface GoalProgressSummary {
+  goalName: string;
+  totalItems: number;
+  mergedCount: number;
+  inReviewCount: number;
+  draftCount: number;
+  closedCount: number;
+  assignees: string[];
+  progressPercent: number;
+}
+
+export interface ProjectMetrics {
+  weekId: string;
+  sprint: string;
+  items: ProjectItem[];
+  byGoal: Record<string, ProjectItem[]>;
+  byAssignee: Record<string, ProjectItem[]>;
+  byStatus: Record<string, number>;
+  goalProgress: GoalProgressSummary[];
+}
+
 // --- Weekly Snapshot (stored in KV) ---
 
 export interface WeeklySnapshot {
@@ -233,6 +274,7 @@ export interface WeeklySnapshot {
   contextSync: ContextSyncMetrics;
   okr?: OKRMetrics;
   propagation?: PropagationEntry[];
+  project?: ProjectMetrics;
 }
 
 // --- Delta (week-over-week comparison) ---

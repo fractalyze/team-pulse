@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { collectGitHubMetrics } from "@/lib/collectors/github";
+import { collectProjectMetrics } from "@/lib/collectors/github-projects";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { assembleSnapshot } from "@/lib/generators/metrics";
 import { saveSnapshot } from "@/lib/store/kv";
@@ -22,9 +23,10 @@ export async function GET(request: Request) {
 
     const team = await getTeam();
 
-    const [github, contextSync] = await Promise.all([
+    const [github, contextSync, project] = await Promise.all([
       collectGitHubMetrics(weekId, team),
       collectContextSyncMetrics(weekId),
+      collectProjectMetrics(weekId),
     ]);
 
     const snapshot = assembleSnapshot(weekId, github, contextSync, {
@@ -32,7 +34,7 @@ export async function GET(request: Request) {
       objectives: [],
       thisWeekGoal: null,
       nextHardDeadline: null,
-    });
+    }, project);
     await saveSnapshot(snapshot);
 
     return NextResponse.json({
@@ -40,6 +42,7 @@ export async function GET(request: Request) {
       weekId,
       github: { totalMerged: github.totalMerged, totalOpen: github.totalOpen },
       contextSync: { sessions: contextSync.totalSessions },
+      project: { items: project.items.length, goals: project.goalProgress.length },
     });
   } catch (error) {
     console.error("Daily collect failed:", error);

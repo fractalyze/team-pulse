@@ -74,6 +74,7 @@ async function collectMergedPRs(
         changedFiles: (pr as Record<string, unknown>).changed_files as number ?? 0,
         milestone: pr.milestone?.title ?? null,
         draft: false,
+        readyForReviewAt: null,
       });
     }
 
@@ -84,6 +85,31 @@ async function collectMergedPRs(
   }
 
   return prs;
+}
+
+/** Fetch the ready_for_review timestamp from PR timeline events. */
+async function fetchReadyForReviewAt(
+  octokit: Octokit,
+  repo: string,
+  prNumber: number
+): Promise<string | null> {
+  try {
+    const { data: events } = await octokit.issues.listEventsForTimeline({
+      owner: ORG,
+      repo,
+      issue_number: prNumber,
+      per_page: 100,
+    });
+
+    for (const event of events) {
+      if ((event as { event?: string }).event === "ready_for_review") {
+        return (event as { created_at?: string }).created_at ?? null;
+      }
+    }
+  } catch {
+    // Timeline API may not be available for all repos
+  }
+  return null;
 }
 
 /** Collect currently open PRs for a repo. */
@@ -106,6 +132,15 @@ async function collectOpenPRs(
     if (data.length === 0) break;
 
     for (const pr of data) {
+      let readyForReviewAt: string | null = null;
+
+      if (!pr.draft) {
+        // For non-draft PRs, check if there was a ready_for_review event
+        readyForReviewAt = await fetchReadyForReviewAt(octokit, repo, pr.number);
+        // If no event found, PR was created as non-draft
+        if (!readyForReviewAt) readyForReviewAt = pr.created_at;
+      }
+
       prs.push({
         repo,
         number: pr.number,
@@ -124,6 +159,7 @@ async function collectOpenPRs(
         changedFiles: (pr as Record<string, unknown>).changed_files as number ?? 0,
         milestone: pr.milestone?.title ?? null,
         draft: pr.draft ?? false,
+        readyForReviewAt,
       });
     }
 
