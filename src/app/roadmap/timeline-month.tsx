@@ -88,7 +88,24 @@ export function TimelineMonth({
               title={`Click to cycle status (${goal.status})`}
             >
               <span>{STATUS_ICON[goal.status]}</span>
-              <span>{goal.title}</span>
+              {goal.source === "github" && (
+                <span className="rounded bg-gray-800 px-1 py-0.5 text-[9px] text-gray-200">
+                  DEV
+                </span>
+              )}
+              {goal.source === "github" && goal.githubUrl ? (
+                <a
+                  href={goal.githubUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="hover:underline"
+                >
+                  {goal.title}
+                </a>
+              ) : (
+                <span>{goal.title}</span>
+              )}
             </button>
           ))}
         </div>

@@ -31,6 +31,8 @@ interface TaskBar {
   leftPct: number;
   widthPct: number;
   isBlocking: boolean;
+  isGithub: boolean;
+  githubUrl?: string;
 }
 
 const DAY_MS = 86_400_000;
@@ -109,6 +111,8 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
             (1 / totalDays) * 100
           ),
           isBlocking: isTaskBlocking(task, now),
+          isGithub: task.source === "github",
+          githubUrl: task.githubUrl,
         };
 
         if (!map.has(task.assignee)) map.set(task.assignee, []);
@@ -207,19 +211,36 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
 
               {/* Task bars */}
               <div className="relative space-y-0.5">
-                {bars.map((bar) => (
-                  <div
-                    key={bar.id}
-                    className={`relative h-5 truncate rounded px-1 text-[10px] font-medium leading-5 ${BAR_BG[bar.status]} ${BAR_TEXT[bar.status]} ${bar.isBlocking ? "ring-2 ring-red-500" : ""}`}
-                    style={{
-                      marginLeft: `${bar.leftPct}%`,
-                      width: `${bar.widthPct}%`,
-                    }}
-                    title={`${bar.content}${bar.deadline ? ` (~ ${bar.deadline.slice(5)})` : ""}${bar.isBlocking ? " ⚠ Overdue" : ""}`}
-                  >
-                    {bar.content}
-                  </div>
-                ))}
+                {bars.map((bar) => {
+                  const barEl = (
+                    <div
+                      key={bar.id}
+                      className={`relative h-5 truncate rounded px-1 text-[10px] font-medium leading-5 ${BAR_BG[bar.status]} ${BAR_TEXT[bar.status]} ${bar.isBlocking ? "ring-2 ring-red-500" : ""} ${bar.isGithub ? "border-l-2 border-dashed border-white/60" : ""}`}
+                      style={{
+                        marginLeft: `${bar.leftPct}%`,
+                        width: `${bar.widthPct}%`,
+                      }}
+                      title={`${bar.isGithub ? "[DEV] " : ""}${bar.content}${bar.deadline ? ` (~ ${bar.deadline.slice(5)})` : ""}${bar.isBlocking ? " ⚠ Overdue" : ""}`}
+                    >
+                      {bar.content}
+                    </div>
+                  );
+
+                  if (bar.isGithub && bar.githubUrl) {
+                    return (
+                      <a
+                        key={bar.id}
+                        href={bar.githubUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        {barEl}
+                      </a>
+                    );
+                  }
+                  return barEl;
+                })}
               </div>
             </div>
           </div>

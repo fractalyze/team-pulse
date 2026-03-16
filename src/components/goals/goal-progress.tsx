@@ -5,6 +5,7 @@
 import { useState, useMemo } from "react";
 import type {
   GoalStatus,
+  GoalSource,
   HalfYearObjective,
   MonthlyGoal,
   WeeklyTask,
@@ -107,6 +108,49 @@ function ProgressRing({ percent }: { percent: number }) {
         {percent}%
       </span>
     </div>
+  );
+}
+
+function SourceBadge({ source }: { source?: GoalSource }) {
+  if (source !== "github") return null;
+  return (
+    <span className="inline-flex items-center rounded bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-gray-200">
+      DEV
+    </span>
+  );
+}
+
+function GoalTitle({
+  title,
+  source,
+  githubUrl,
+}: {
+  title: string;
+  source?: GoalSource;
+  githubUrl?: string;
+}) {
+  const label = (
+    <span className="text-sm font-medium text-gray-900 dark:text-white">
+      {title}
+    </span>
+  );
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <SourceBadge source={source} />
+      {source === "github" && githubUrl ? (
+        <a
+          href={githubUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-medium text-gray-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
+        >
+          {title}
+        </a>
+      ) : (
+        label
+      )}
+    </span>
   );
 }
 
@@ -295,9 +339,11 @@ export function GoalProgress({
                       <span className={`text-base ${ICON_COLOR[goal.status]}`}>
                         {STATUS_ICON[goal.status]}
                       </span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {goal.title}
-                      </span>
+                      <GoalTitle
+                        title={goal.title}
+                        source={goal.source}
+                        githubUrl={goal.githubUrl}
+                      />
                     </div>
                     {linkedTasks.length > 0 && (
                       <span className="text-xs text-gray-400">
