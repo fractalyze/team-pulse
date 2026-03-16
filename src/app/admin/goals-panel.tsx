@@ -82,6 +82,9 @@ export function GoalsPanel() {
         <p className="mt-1 text-sm text-gray-500">
           반기 / 월간 / 주간 목표 관리
         </p>
+        <p className="mt-1 text-xs text-gray-400">
+          개발 목표는 GitHub Projects에서 관리됩니다. 여기서는 비개발 목표만 편집할 수 있습니다.
+        </p>
       </div>
 
       <div className="flex gap-1">
@@ -213,10 +216,14 @@ function MonthlyTab() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  const [ghGoals, setGhGoals] = useState<MonthlyGoal[]>([]);
+
   const load = useCallback(async () => {
     const res = await fetch(`/api/goals?tier=month&month=${month}`);
     const { data } = await res.json();
-    setGoals(data ?? []);
+    const all: MonthlyGoal[] = data ?? [];
+    setGoals(all.filter((g) => g.source !== "github"));
+    setGhGoals(all.filter((g) => g.source === "github"));
     setLoaded(true);
   }, [month]);
 
@@ -326,6 +333,38 @@ function MonthlyTab() {
           {saving ? "Saving..." : "Save"}
         </button>
       </div>
+
+      {ghGoals.length > 0 && (
+        <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+          <p className="mb-2 text-xs font-medium text-gray-500">
+            GitHub Projects (read-only)
+          </p>
+          <div className="space-y-1">
+            {ghGoals.map((g) => (
+              <div key={g.id} className="flex items-center gap-2 text-sm text-gray-500">
+                <span className={STATUS_COLOR[g.status]}>
+                  {STATUS_ICON[g.status]}
+                </span>
+                <span className="rounded bg-gray-800 px-1 py-0.5 text-[9px] text-gray-200">
+                  DEV
+                </span>
+                {g.githubUrl ? (
+                  <a
+                    href={g.githubUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-blue-500"
+                  >
+                    {g.title}
+                  </a>
+                ) : (
+                  <span>{g.title}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -364,7 +403,9 @@ function WeeklyTab() {
     const { data: tasksData } = await tasksRes.json();
     const { data: teamData } = await teamRes.json();
     const { data: goalsData } = await goalsRes.json();
-    setTasks(tasksData ?? []);
+    // Filter out GitHub-sourced tasks (read-only)
+    const allTasks: WeeklyTask[] = tasksData ?? [];
+    setTasks(allTasks.filter((t) => t.source !== "github"));
     setTeam(teamData ?? []);
     setMonthlyGoals(goalsData ?? []);
     setLoaded(true);
