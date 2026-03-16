@@ -126,12 +126,16 @@ export interface ContextSyncMetrics {
 // --- Goal System (3-Tier) ---
 
 export type GoalStatus = "not_started" | "in_progress" | "done";
+export type GoalSource = "manual" | "github";
 
 export interface HalfYearObjective {
   id: string;
   period: string;
   title: string;
   description?: string;
+  source?: GoalSource;
+  githubUrl?: string;
+  githubItemId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -141,6 +145,9 @@ export interface MonthlyGoal {
   month: string;
   title: string;
   status: GoalStatus;
+  source?: GoalSource;
+  githubUrl?: string;
+  githubItemId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -154,6 +161,9 @@ export interface WeeklyTask {
   status: GoalStatus;
   startDate?: string; // "YYYY-MM-DD"
   goalId?: string; // MonthlyGoal.id reference
+  source?: GoalSource;
+  githubUrl?: string;
+  githubItemId?: string;
   createdAt: string;
   updatedAt: string;
 }
