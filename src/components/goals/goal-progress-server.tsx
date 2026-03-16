@@ -1,11 +1,11 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import {
-  getHalfYearObjective,
-  getMonthlyGoals,
-  getWeeklyTasks,
+  getMergedHalfYearObjective,
+  getMergedMonthlyGoals,
+  getMergedWeeklyTasks,
   getAllHalfYearPeriods,
-} from "@/lib/store/goals";
+} from "@/lib/store/goals-merged";
 import type { WeeklyTask } from "@/lib/types";
 import {
   weekIdToMonth,
@@ -24,9 +24,9 @@ export async function GoalProgressServer({ weekId }: GoalProgressServerProps) {
   const monthWeekIds = getWeekIdsForMonth(month);
 
   const [halfYear, monthlyGoals, ...weekTaskArrays] = await Promise.all([
-    getHalfYearObjective(half),
-    getMonthlyGoals(month),
-    ...monthWeekIds.map((wId) => getWeeklyTasks(wId)),
+    getMergedHalfYearObjective(half),
+    getMergedMonthlyGoals(month),
+    ...monthWeekIds.map((wId) => getMergedWeeklyTasks(wId)),
   ]);
 
   // Calculate all monthly goals in this half for progress bar
@@ -43,7 +43,7 @@ export async function GoalProgressServer({ weekId }: GoalProgressServerProps) {
     for (let m = startMonth; m <= endMonth; m++) {
       const monthKey = `${year}-${String(m).padStart(2, "0")}`;
       const goals =
-        monthKey === month ? monthlyGoals : await getMonthlyGoals(monthKey);
+        monthKey === month ? monthlyGoals : await getMergedMonthlyGoals(monthKey);
       allMonthlyTotal += goals.length;
       allMonthlyDone += goals.filter((g) => g.status === "done").length;
     }

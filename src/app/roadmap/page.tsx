@@ -1,10 +1,10 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import {
-  getHalfYearObjective,
-  getMonthlyGoals,
-  getWeeklyTasks,
-} from "@/lib/store/goals";
+  getMergedHalfYearObjective,
+  getMergedMonthlyGoals,
+  getMergedWeeklyTasks,
+} from "@/lib/store/goals-merged";
 import { getWeekId, weekIdToHalf, getWeekIdsForMonth } from "@/lib/week";
 import { computeRoadmapData } from "@/lib/roadmap";
 import type { WeeklyTask } from "@/lib/types";
@@ -22,14 +22,14 @@ export default async function RoadmapPage() {
 
   let halfYear = null;
   try {
-    halfYear = await getHalfYearObjective(halfPeriod);
+    halfYear = await getMergedHalfYearObjective(halfPeriod);
   } catch {
     // KV not configured
   }
 
   const monthsData: {
     month: string;
-    goals: Awaited<ReturnType<typeof getMonthlyGoals>>;
+    goals: Awaited<ReturnType<typeof getMergedMonthlyGoals>>;
     weekTasks: Map<string, WeeklyTask[]>;
   }[] = [];
 
@@ -43,14 +43,14 @@ export default async function RoadmapPage() {
     await Promise.all(
       monthEntries.map(async (month) => {
         const [goals, weekIds] = await Promise.all([
-          getMonthlyGoals(month),
+          getMergedMonthlyGoals(month),
           Promise.resolve(getWeekIdsForMonth(month)),
         ]);
 
         const weekTasksList = await Promise.all(
           weekIds.map(async (weekId) => ({
             weekId,
-            tasks: await getWeeklyTasks(weekId),
+            tasks: await getMergedWeeklyTasks(weekId),
           }))
         );
 

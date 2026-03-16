@@ -3,22 +3,27 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
-  getHalfYearObjective,
   saveHalfYearObjective,
   deleteHalfYearObjective,
-  getAllHalfYearPeriods,
-  getMonthlyGoals,
   saveMonthlyGoals,
   deleteMonthlyGoals,
-  getWeeklyTasks,
+  getMonthlyGoals,
   saveWeeklyTasks,
   deleteWeeklyTasks,
-  getAllGoalWeekIds,
 } from "@/lib/store/goals";
+import {
+  getMergedHalfYearObjective,
+  getMergedMonthlyGoals,
+  getMergedWeeklyTasks,
+  getAllHalfYearPeriods,
+  getAllGoalWeekIds,
+  setGhStatusOverride,
+} from "@/lib/store/goals-merged";
 import { getAllWeekIds } from "@/lib/store/kv";
 import { getTeam } from "@/lib/team";
 import { getWeekId } from "@/lib/week";
-import type { HalfYearObjective, MonthlyGoal, WeeklyTask } from "@/lib/types";
+import { getWeeklyTasks } from "@/lib/store/goals";
+import type { GoalStatus, HalfYearObjective, MonthlyGoal, WeeklyTask } from "@/lib/types";
 
 async function checkAdmin(): Promise<NextResponse | null> {
   const session = await auth();
@@ -40,12 +45,12 @@ export async function GET(request: Request) {
   if (tier === "half") {
     const period = searchParams.get("period");
     if (period) {
-      const obj = await getHalfYearObjective(period);
+      const obj = await getMergedHalfYearObjective(period);
       return NextResponse.json({ data: obj });
     }
     const periods = await getAllHalfYearPeriods();
     const objectives = await Promise.all(
-      periods.map((p) => getHalfYearObjective(p))
+      periods.map((p) => getMergedHalfYearObjective(p))
     );
     return NextResponse.json({
       data: objectives.filter(Boolean),
@@ -60,7 +65,7 @@ export async function GET(request: Request) {
         { status: 400 }
       );
     }
-    const goals = await getMonthlyGoals(month);
+    const goals = await getMergedMonthlyGoals(month);
     return NextResponse.json({ data: goals });
   }
 
@@ -72,7 +77,7 @@ export async function GET(request: Request) {
         { status: 400 }
       );
     }
-    const tasks = await getWeeklyTasks(weekId);
+    const tasks = await getMergedWeeklyTasks(weekId);
     return NextResponse.json({ data: tasks });
   }
 
@@ -107,6 +112,13 @@ export async function PATCH(request: Request) {
   const validStatuses = ["not_started", "in_progress", "done"];
   if (!validStatuses.includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  }
+
+  // GitHub-sourced goals: store status override in Redis
+  if (typeof id === "string" && id.startsWith("gh-")) {
+    const itemId = id.slice(3); // strip "gh-" prefix
+    await setGhStatusOverride(itemId, status as GoalStatus);
+    return NextResponse.json({ status: "updated", source: "github", id });
   }
 
   if (tier === "month") {
