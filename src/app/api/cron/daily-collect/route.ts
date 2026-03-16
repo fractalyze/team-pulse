@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { collectGitHubMetrics } from "@/lib/collectors/github";
 import { collectProjectMetrics } from "@/lib/collectors/github-projects";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
+import { syncGitHubProjectToRedis } from "@/lib/collectors/github-project";
 import { assembleSnapshot } from "@/lib/generators/metrics";
 import { saveSnapshot } from "@/lib/store/kv";
 import { getWeekId } from "@/lib/week";
@@ -23,10 +24,14 @@ export async function GET(request: Request) {
 
     const team = await getTeam();
 
-    const [github, contextSync, project] = await Promise.all([
+    const [github, contextSync, project, ghProjectSync] = await Promise.all([
       collectGitHubMetrics(weekId, team),
       collectContextSyncMetrics(weekId),
       collectProjectMetrics(weekId),
+      syncGitHubProjectToRedis().catch((e) => {
+        console.error("GitHub Project sync failed:", e);
+        return null;
+      }),
     ]);
 
     const snapshot = assembleSnapshot(weekId, github, contextSync, {
@@ -43,6 +48,7 @@ export async function GET(request: Request) {
       github: { totalMerged: github.totalMerged, totalOpen: github.totalOpen },
       contextSync: { sessions: contextSync.totalSessions },
       project: { items: project.items.length, goals: project.goalProgress.length },
+      ghProject: ghProjectSync,
     });
   } catch (error) {
     console.error("Daily collect failed:", error);

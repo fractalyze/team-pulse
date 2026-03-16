@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { collectGitHubMetrics } from "@/lib/collectors/github";
 import { collectProjectMetrics } from "@/lib/collectors/github-projects";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
+import { syncGitHubProjectToRedis } from "@/lib/collectors/github-project";
 import { assembleSnapshot, computeDelta } from "@/lib/generators/metrics";
 import { saveSnapshot, getSnapshot } from "@/lib/store/kv";
 import { getWeekId, getPreviousWeekId } from "@/lib/week";
@@ -260,6 +261,20 @@ export async function POST(request: Request) {
     } catch (e) {
       return NextResponse.json(
         { source: "notion", error: String(e) },
+        { status: 500 }
+      );
+    }
+  }
+
+  // --- Sync GitHub Project ---
+
+  if (actions.includes("sync-github-project")) {
+    try {
+      const result = await syncGitHubProjectToRedis();
+      return NextResponse.json({ status: "synced", ...result });
+    } catch (e) {
+      return NextResponse.json(
+        { source: "github-project", error: String(e) },
         { status: 500 }
       );
     }
