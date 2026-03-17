@@ -125,7 +125,7 @@ export interface ContextSyncMetrics {
 
 // --- Goal System (3-Tier) ---
 
-export type GoalStatus = "not_started" | "in_progress" | "done";
+export type GoalStatus = "not_started" | "in_progress" | "done" | "closed";
 export type GoalSource = "manual" | "github";
 
 export interface HalfYearObjective {
@@ -247,6 +247,7 @@ export interface ProjectItem {
   assignees: string[];
   sprint: string | null;
   monthlyGoal: string | null;
+  weeklyGoal: string | null;
   status: string | null;
   level: string | null;
   merged: boolean;
@@ -269,6 +270,7 @@ export interface ProjectMetrics {
   sprint: string;
   items: ProjectItem[];
   byGoal: Record<string, ProjectItem[]>;
+  byWeeklyGoal: Record<string, ProjectItem[]>;
   byAssignee: Record<string, ProjectItem[]>;
   byStatus: Record<string, number>;
   goalProgress: GoalProgressSummary[];
