@@ -18,8 +18,9 @@ import {
   getAllHalfYearPeriods,
   getAllGoalWeekIds,
   setGhStatusOverride,
+  setGhFieldOverride,
 } from "@/lib/store/goals-merged";
-import { getAllWeekIds } from "@/lib/store/kv";
+import { getAllWeekIds, getRedis } from "@/lib/store/kv";
 import { getTeam } from "@/lib/team";
 import { getWeekId } from "@/lib/week";
 import { getWeeklyTasks } from "@/lib/store/goals";
@@ -97,6 +98,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: team });
   }
 
+  if (tier === "displaynames") {
+    const redis = getRedis();
+    const data = await redis.get<string>("config:displaynames");
+    const map: Record<string, string> = data
+      ? typeof data === "string" ? JSON.parse(data) : data
+      : {};
+    return NextResponse.json({ data: map });
+  }
+
   return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
 }
 
@@ -107,9 +117,9 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
-  const { tier, id, status } = body;
+  const { tier, id, status, startDate, deadline } = body;
 
-  const validStatuses = ["not_started", "in_progress", "done"];
+  const validStatuses = ["not_started", "in_progress", "done", "closed"];
   if (!validStatuses.includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
@@ -118,6 +128,13 @@ export async function PATCH(request: Request) {
   if (typeof id === "string" && id.startsWith("gh-")) {
     const itemId = id.slice(3); // strip "gh-" prefix
     await setGhStatusOverride(itemId, status as GoalStatus);
+    // Also store date overrides if provided
+    const fields: Record<string, string> = {};
+    if (typeof startDate === "string") fields.startDate = startDate;
+    if (typeof deadline === "string") fields.deadline = deadline;
+    if (Object.keys(fields).length > 0) {
+      await setGhFieldOverride(itemId, fields);
+    }
     return NextResponse.json({ status: "updated", source: "github", id });
   }
 
@@ -192,6 +209,13 @@ export async function POST(request: Request) {
     const tasks: WeeklyTask[] = body.tasks;
     await saveWeeklyTasks(body.weekId, tasks);
     return NextResponse.json({ status: "saved", weekId: body.weekId });
+  }
+
+  if (tier === "displaynames") {
+    const redis = getRedis();
+    const map: Record<string, string> = body.map ?? {};
+    await redis.set("config:displaynames", JSON.stringify(map));
+    return NextResponse.json({ status: "saved" });
   }
 
   return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
