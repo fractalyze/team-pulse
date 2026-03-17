@@ -28,30 +28,36 @@ interface GoalProgressProps {
   allMonthTasks: WeeklyTask[];
   currentWeekId: string;
   achievementTrend: AchievementPoint[];
+  nextMonth?: string;
+  nextMonthGoals?: MonthlyGoal[];
 }
 
 const STATUS_ICON: Record<GoalStatus, string> = {
   done: "\u2713",
   in_progress: "\u25D0",
   not_started: "\u25CB",
+  closed: "\u2715",
 };
 
 const ICON_COLOR: Record<GoalStatus, string> = {
   done: "text-green-500",
   in_progress: "text-blue-500",
   not_started: "text-gray-400",
+  closed: "text-red-400",
 };
 
 const GOAL_CARD_BORDER: Record<GoalStatus, string> = {
   done: "border-green-200 dark:border-green-800",
   in_progress: "border-blue-200 dark:border-blue-800",
   not_started: "border-gray-200 dark:border-gray-700",
+  closed: "border-red-200 dark:border-red-800",
 };
 
 const GOAL_CARD_BG: Record<GoalStatus, string> = {
   done: "bg-green-50/50 dark:bg-green-950/30",
   in_progress: "bg-blue-50/50 dark:bg-blue-950/30",
   not_started: "bg-gray-50/50 dark:bg-gray-800/30",
+  closed: "bg-red-50/50 dark:bg-red-950/30",
 };
 
 const PROGRESS_RING_SIZE = 80;
@@ -156,7 +162,11 @@ function GoalTitle({
 
 function goalStatus(tasks: WeeklyTask[]): GoalStatus {
   if (tasks.length === 0) return "not_started";
+  if (tasks.some((t) => t.status === "in_progress")) return "in_progress";
   if (tasks.every((t) => t.status === "done")) return "done";
+  if (tasks.every((t) => t.status === "closed")) return "closed";
+  if (tasks.every((t) => t.status === "done" || t.status === "closed"))
+    return "done";
   if (tasks.some((t) => t.status !== "not_started")) return "in_progress";
   return "not_started";
 }
@@ -171,6 +181,8 @@ export function GoalProgress({
   allMonthTasks,
   currentWeekId,
   achievementTrend,
+  nextMonth: nextMonthStr,
+  nextMonthGoals = [],
 }: GoalProgressProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -435,6 +447,37 @@ export function GoalProgress({
             data={achievementTrend}
             currentWeekId={currentWeekId}
           />
+        </div>
+      )}
+
+      {/* Next month goals preview */}
+      {nextMonthGoals.length > 0 && nextMonthStr && (
+        <div className="border-t border-gray-100 px-6 py-4 dark:border-gray-800">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {parseInt(nextMonthStr.split("-")[1], 10)}월 Goals
+            </span>
+            <span className="text-xs text-gray-400">next month</span>
+          </div>
+          <div className="space-y-2">
+            {nextMonthGoals.map((goal) => (
+              <div
+                key={goal.id}
+                className={`rounded-lg border px-4 py-2.5 ${GOAL_CARD_BORDER[goal.status]} ${GOAL_CARD_BG[goal.status]}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`text-base ${ICON_COLOR[goal.status]}`}>
+                    {STATUS_ICON[goal.status]}
+                  </span>
+                  <GoalTitle
+                    title={goal.title}
+                    source={goal.source}
+                    githubUrl={goal.githubUrl}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
