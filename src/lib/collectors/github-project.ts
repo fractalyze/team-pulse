@@ -13,10 +13,12 @@ import type {
 // --- Types for GraphQL response ---
 
 interface ProjectFieldValue {
+  __typename?: string;
   field: { name: string };
   text?: string;
   name?: string; // for single-select fields
   title?: string; // for iteration fields
+  users?: { nodes: { login: string }[] }; // for user fields
 }
 
 interface ProjectItem {
@@ -69,6 +71,7 @@ const ITEMS_QUERY = `
             }
             fieldValues(first: 20) {
               nodes {
+                __typename
                 ... on ProjectV2ItemFieldTextValue {
                   field { ... on ProjectV2Field { name } }
                   text
@@ -80,6 +83,10 @@ const ITEMS_QUERY = `
                 ... on ProjectV2ItemFieldIterationValue {
                   field { ... on ProjectV2IterationField { name } }
                   title
+                }
+                ... on ProjectV2ItemFieldUserValue {
+                  field { ... on ProjectV2Field { name } }
+                  users(first: 10) { nodes { login } }
                 }
               }
             }
@@ -144,8 +151,20 @@ function getUrl(item: ProjectItem): string | undefined {
 }
 
 function getAssignees(item: ProjectItem): string[] {
+  // First try content-level assignees (Issue/PR)
   if (item.content && "assignees" in item.content && item.content.assignees) {
-    return item.content.assignees.nodes.map((a) => a.login);
+    const logins = item.content.assignees.nodes.map((a) => a.login);
+    if (logins.length > 0) return logins;
+  }
+  // Fallback to project-level "Assignees" user field (DraftIssue)
+  for (const fv of item.fieldValues.nodes) {
+    if (
+      fv.__typename === "ProjectV2ItemFieldUserValue" &&
+      fv.field?.name === "Assignees" &&
+      fv.users
+    ) {
+      return fv.users.nodes.map((u) => u.login);
+    }
   }
   return [];
 }
@@ -154,8 +173,8 @@ function getAssignees(item: ProjectItem): string[] {
 function mapGitHubStatus(ghStatus: string | undefined): GoalStatus {
   if (!ghStatus) return "not_started";
   const lower = ghStatus.toLowerCase();
-  if (lower === "done" || lower === "merged" || lower === "closed")
-    return "done";
+  if (lower === "closed") return "closed";
+  if (lower === "done" || lower === "merged") return "done";
   if (
     lower === "in progress" ||
     lower === "in_progress" ||
@@ -181,6 +200,24 @@ function mapToGoals(items: ProjectItem[]): MappedGoals {
 
   // First pass: collect Monthly Goals to build title → id map for goalId linking
   const monthlyGoalIdByTitle = new Map<string, string>();
+
+  /** Fuzzy lookup: exact match first, then word-based matching. */
+  function findMonthlyGoalId(ref: string): string | undefined {
+    const exact = monthlyGoalIdByTitle.get(ref);
+    if (exact) return exact;
+    // Fallback: check if all significant words from ref exist in the title
+    const refWords = ref.split(/\s+/).filter((w) => w.length >= 2);
+    let bestId: string | undefined;
+    let bestScore = 0;
+    for (const [title, id] of monthlyGoalIdByTitle) {
+      const matched = refWords.filter((w) => title.includes(w)).length;
+      if (matched > bestScore && matched >= refWords.length * 0.6) {
+        bestScore = matched;
+        bestId = id;
+      }
+    }
+    return bestId;
+  }
 
   for (const item of items) {
     const level = getField(item, "Level");
@@ -212,16 +249,20 @@ function mapToGoals(items: ProjectItem[]): MappedGoals {
   // Second pass: Objectives and Weekly Goals
   for (const item of items) {
     const level = getField(item, "Level");
-    if (!level) continue;
-
     const ghStatus = getField(item, "Status");
     const title = getTitle(item);
     const url = getUrl(item);
 
-    if (level === "Objective") {
-      const objective = getField(item, "Objective");
-      // Parse period from Objective field (e.g., "2026-H1")
-      const period = objective ?? "unknown";
+    // Detect Objective: explicit Level or self-referencing Objective field
+    const objective = getField(item, "Objective");
+    const isObjective =
+      level === "Objective" ||
+      (!level && objective && objective === title);
+
+    if (isObjective) {
+      // Parse period from Objective field (e.g., "2026-H1 ..." → extract "2026-H1")
+      const periodMatch = objective?.match(/^(\d{4}-H[12])/);
+      const period = periodMatch ? periodMatch[1] : objective ?? "unknown";
 
       objectives.push({
         id: `gh-${item.id}`,
@@ -248,10 +289,10 @@ function mapToGoals(items: ProjectItem[]): MappedGoals {
       const assignees = getAssignees(item);
       const assignee = assignees[0] ?? "unassigned";
 
-      // Link to parent Monthly Goal via "Monthly Goal" field
+      // Link to parent Monthly Goal via "Monthly Goal" field (fuzzy match)
       const monthlyGoalTitle = getField(item, "Monthly Goal");
       const goalId = monthlyGoalTitle
-        ? monthlyGoalIdByTitle.get(monthlyGoalTitle)
+        ? findMonthlyGoalId(monthlyGoalTitle)
         : undefined;
 
       weeklyTasks.push({
