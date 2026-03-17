@@ -13,8 +13,25 @@ import type {
   WeeklyTask,
 } from "../types";
 
-// Re-export unchanged functions
-export { getAllHalfYearPeriods, getAllGoalWeekIds } from "./goals";
+// Re-export with merged GitHub data
+export { getAllGoalWeekIds } from "./goals";
+
+import { getAllHalfYearPeriods as getManualHalfYearPeriods } from "./goals";
+
+/** Get all half-year periods from both manual and GitHub sources. */
+export async function getAllHalfYearPeriods(): Promise<string[]> {
+  const redis = getRedis();
+  const [manual, ghData] = await Promise.all([
+    getManualHalfYearPeriods(),
+    redis.get<string>("ghproject:index:periods"),
+  ]);
+  const ghPeriods: string[] = ghData
+    ? typeof ghData === "string" ? JSON.parse(ghData) : ghData
+    : [];
+  const all = [...new Set([...manual, ...ghPeriods])];
+  all.sort().reverse();
+  return all;
+}
 
 // --- GitHub status override ---
 
@@ -35,6 +52,34 @@ export async function setGhStatusOverride(
 ): Promise<void> {
   const redis = getRedis();
   await redis.set(`ghstatus:${itemId}`, status);
+}
+
+// --- GitHub field override (startDate, deadline) ---
+
+interface GhFieldOverride {
+  startDate?: string;
+  deadline?: string;
+}
+
+/** Get the user-overridden fields for a GitHub project item. */
+async function getGhFieldOverride(
+  itemId: string
+): Promise<GhFieldOverride | null> {
+  const redis = getRedis();
+  const data = await redis.get<string>(`ghoverride:${itemId}`);
+  if (!data) return null;
+  return typeof data === "string" ? JSON.parse(data) : data;
+}
+
+/** Set field overrides (startDate, deadline) for a GitHub project item. */
+export async function setGhFieldOverride(
+  itemId: string,
+  fields: GhFieldOverride
+): Promise<void> {
+  const redis = getRedis();
+  const existing = await getGhFieldOverride(itemId);
+  const merged = { ...existing, ...fields };
+  await redis.set(`ghoverride:${itemId}`, JSON.stringify(merged));
 }
 
 // --- GitHub cached data helpers ---
@@ -82,8 +127,15 @@ async function applyWeeklyOverrides(
   return Promise.all(
     tasks.map(async (t) => {
       if (t.source !== "github" || !t.githubItemId) return t;
-      const override = await getGhStatusOverride(t.githubItemId);
-      return override ? { ...t, status: override } : t;
+      const [statusOverride, fieldOverride] = await Promise.all([
+        getGhStatusOverride(t.githubItemId),
+        getGhFieldOverride(t.githubItemId),
+      ]);
+      let result = t;
+      if (statusOverride) result = { ...result, status: statusOverride };
+      if (fieldOverride?.startDate) result = { ...result, startDate: fieldOverride.startDate };
+      if (fieldOverride?.deadline) result = { ...result, deadline: fieldOverride.deadline };
+      return result;
     })
   );
 }
