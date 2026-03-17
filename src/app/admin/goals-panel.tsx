@@ -9,22 +9,31 @@ import type {
   MonthlyGoal,
   WeeklyTask,
   TeamMember,
+  ProjectItem,
 } from "@/lib/types";
 import { weekIdToMonth, getWeekRange } from "@/lib/week";
 
 type Tab = "half" | "month" | "week";
 
-const STATUS_CYCLE: GoalStatus[] = ["not_started", "in_progress", "done"];
 const STATUS_ICON: Record<GoalStatus, string> = {
   done: "\u2713",
   in_progress: "\u25D0",
   not_started: "\u25CB",
+  closed: "\u2715",
 };
 const STATUS_COLOR: Record<GoalStatus, string> = {
   done: "text-green-500",
   in_progress: "text-blue-500",
   not_started: "text-gray-400",
+  closed: "text-red-400",
 };
+const STATUS_LABEL: Record<GoalStatus, string> = {
+  not_started: "To Do",
+  in_progress: "In Progress",
+  done: "Done",
+  closed: "Closed",
+};
+const ALL_STATUSES: GoalStatus[] = ["not_started", "in_progress", "done", "closed"];
 
 function currentHalf(): string {
   const now = new Date();
@@ -210,20 +219,48 @@ function SyncBanner() {
   );
 }
 
+/** Compute monthly goal status from linked weekly tasks. */
+function computeGoalStatus(tasks: WeeklyTask[], fallback: GoalStatus): GoalStatus {
+  if (tasks.length === 0) return fallback;
+  if (tasks.some((t) => t.status === "in_progress")) return "in_progress";
+  if (tasks.every((t) => t.status === "done")) return "done";
+  if (tasks.every((t) => t.status === "closed")) return "closed";
+  if (tasks.every((t) => t.status === "done" || t.status === "closed"))
+    return "done";
+  if (tasks.some((t) => t.status !== "not_started")) return "in_progress";
+  return "not_started";
+}
+
 function MonthlyTab() {
   const [month, setMonth] = useState(currentMonth());
   const [goals, setGoals] = useState<MonthlyGoal[]>([]);
+  const [ghGoals, setGhGoals] = useState<MonthlyGoal[]>([]);
+  const [weeklyTasks, setWeeklyTasks] = useState<WeeklyTask[]>([]);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  const [ghGoals, setGhGoals] = useState<MonthlyGoal[]>([]);
-
   const load = useCallback(async () => {
+    // Fetch monthly goals and all weekly tasks for this month's weeks
     const res = await fetch(`/api/goals?tier=month&month=${month}`);
     const { data } = await res.json();
     const all: MonthlyGoal[] = data ?? [];
     setGoals(all.filter((g) => g.source !== "github"));
     setGhGoals(all.filter((g) => g.source === "github"));
+
+    // Fetch all week IDs and filter to this month, then fetch tasks
+    const weeksRes = await fetch("/api/goals?tier=weeks");
+    const { data: allWeeks } = await weeksRes.json();
+    const monthWeeks = (allWeeks as string[] ?? []).filter(
+      (w) => weekIdToMonth(w) === month
+    );
+    const taskResults = await Promise.all(
+      monthWeeks.map((w) =>
+        fetch(`/api/goals?tier=week&weekId=${w}`).then((r) => r.json())
+      )
+    );
+    const allTasks: WeeklyTask[] = taskResults.flatMap((r) => r.data ?? []);
+    setWeeklyTasks(allTasks);
+
     setLoaded(true);
   }, [month]);
 
@@ -266,15 +303,19 @@ function MonthlyTab() {
     setGoals(goals.filter((g) => g.id !== id));
   }
 
-  function cycleStatus(id: string) {
-    const goal = goals.find((g) => g.id === id);
-    if (!goal) return;
-    const nextIdx =
-      (STATUS_CYCLE.indexOf(goal.status) + 1) % STATUS_CYCLE.length;
-    updateGoal(id, { status: STATUS_CYCLE[nextIdx] });
+  // Build goalId → tasks map for auto-status
+  const goalTaskMap = new Map<string, WeeklyTask[]>();
+  for (const task of weeklyTasks) {
+    if (task.goalId) {
+      if (!goalTaskMap.has(task.goalId)) goalTaskMap.set(task.goalId, []);
+      goalTaskMap.get(task.goalId)!.push(task);
+    }
   }
 
   if (!loaded) return <p className="text-sm text-gray-500">Loading...</p>;
+
+  // Combine all goals for display: manual first, then GitHub
+  const allGoals = [...goals, ...ghGoals];
 
   return (
     <div className="space-y-3 rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
@@ -292,30 +333,81 @@ function MonthlyTab() {
       </div>
 
       <div className="space-y-2">
-        {goals.map((goal) => (
-          <div key={goal.id} className="flex items-center gap-2">
-            <button
-              onClick={() => cycleStatus(goal.id)}
-              className={`text-lg ${STATUS_COLOR[goal.status]}`}
-              title={goal.status}
-            >
-              {STATUS_ICON[goal.status]}
-            </button>
-            <input
-              type="text"
-              value={goal.title}
-              onChange={(e) => updateGoal(goal.id, { title: e.target.value })}
-              placeholder="목표 제목"
-              className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-            />
-            <button
-              onClick={() => removeGoal(goal.id)}
-              className="text-sm text-red-500 hover:text-red-700"
-            >
-              Delete
-            </button>
-          </div>
-        ))}
+        {allGoals.map((goal) => {
+          const isGh = goal.source === "github";
+          const linkedTasks = goalTaskMap.get(goal.id) ?? [];
+          const autoStatus = linkedTasks.length > 0
+            ? computeGoalStatus(linkedTasks, goal.status)
+            : goal.status;
+          const displayStatus = isGh ? autoStatus : goal.status;
+
+          return (
+            <div key={goal.id} className="flex items-center gap-2">
+              {isGh ? (
+                <span
+                  className={`text-lg ${STATUS_COLOR[displayStatus]}`}
+                  title={`${displayStatus} (auto-computed from ${linkedTasks.length} tasks)`}
+                >
+                  {STATUS_ICON[displayStatus]}
+                </span>
+              ) : (
+                <select
+                  value={goal.status}
+                  onChange={(e) =>
+                    updateGoal(goal.id, { status: e.target.value as GoalStatus })
+                  }
+                  className={`rounded border border-gray-300 px-1 py-0.5 text-xs ${STATUS_COLOR[goal.status]} dark:border-gray-700 dark:bg-gray-800`}
+                >
+                  {ALL_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {isGh && (
+                <span className="rounded bg-gray-800 px-1 py-0.5 text-[9px] text-gray-200">
+                  DEV
+                </span>
+              )}
+              {isGh ? (
+                goal.githubUrl ? (
+                  <a
+                    href={goal.githubUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 text-sm text-gray-700 hover:text-blue-500 dark:text-gray-300"
+                  >
+                    {goal.title}
+                  </a>
+                ) : (
+                  <span className="flex-1 text-sm text-gray-500">{goal.title}</span>
+                )
+              ) : (
+                <input
+                  type="text"
+                  value={goal.title}
+                  onChange={(e) => updateGoal(goal.id, { title: e.target.value })}
+                  placeholder="목표 제목"
+                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                />
+              )}
+              {isGh && linkedTasks.length > 0 && (
+                <span className="text-xs text-gray-400">
+                  {linkedTasks.filter((t) => t.status === "done").length}/{linkedTasks.length}
+                </span>
+              )}
+              {!isGh && (
+                <button
+                  onClick={() => removeGoal(goal.id)}
+                  className="text-sm text-red-500 hover:text-red-700"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex gap-2">
@@ -333,38 +425,6 @@ function MonthlyTab() {
           {saving ? "Saving..." : "Save"}
         </button>
       </div>
-
-      {ghGoals.length > 0 && (
-        <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
-          <p className="mb-2 text-xs font-medium text-gray-500">
-            GitHub Projects (read-only)
-          </p>
-          <div className="space-y-1">
-            {ghGoals.map((g) => (
-              <div key={g.id} className="flex items-center gap-2 text-sm text-gray-500">
-                <span className={STATUS_COLOR[g.status]}>
-                  {STATUS_ICON[g.status]}
-                </span>
-                <span className="rounded bg-gray-800 px-1 py-0.5 text-[9px] text-gray-200">
-                  DEV
-                </span>
-                {g.githubUrl ? (
-                  <a
-                    href={g.githubUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:text-blue-500"
-                  >
-                    {g.title}
-                  </a>
-                ) : (
-                  <span>{g.title}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -377,37 +437,66 @@ function weekLabel(wId: string): string {
   return `${fmt(start)}-${fmt(end)}`;
 }
 
+/** Status badge for project items (PRs). */
+function PRStatusBadge({ status }: { status: string | null }) {
+  const colors: Record<string, string> = {
+    Merged: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+    "In Review": "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+    Draft: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
+    Closed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+  };
+  const s = status ?? "Unknown";
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${colors[s] ?? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"}`}>
+      {s}
+    </span>
+  );
+}
+
 function WeeklyTab() {
   const [weekId, setWeekId] = useState(currentWeekId());
   const [tasks, setTasks] = useState<WeeklyTask[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [monthlyGoals, setMonthlyGoals] = useState<MonthlyGoal[]>([]);
+  const [projectItems, setProjectItems] = useState<ProjectItem[]>([]);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
+  const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  // Load weeks list once
+  const dn = (name: string) => displayNames[name] ?? name;
+
+  // Load weeks list and display names once
   useEffect(() => {
     fetch("/api/goals?tier=weeks")
       .then((r) => r.json())
       .then((json) => setAvailableWeeks(json.data ?? []));
+    fetch("/api/goals?tier=displaynames")
+      .then((r) => r.json())
+      .then((json) => setDisplayNames(json.data ?? {}));
   }, []);
 
   const load = useCallback(async () => {
     const month = weekIdToMonth(weekId);
-    const [tasksRes, teamRes, goalsRes] = await Promise.all([
+    const [tasksRes, teamRes, goalsRes, snapshotRes] = await Promise.all([
       fetch(`/api/goals?tier=week&weekId=${weekId}`),
       fetch("/api/goals?tier=team"),
       fetch(`/api/goals?tier=month&month=${month}`),
+      fetch(`/api/data?type=summary&weekId=${weekId}`),
     ]);
     const { data: tasksData } = await tasksRes.json();
     const { data: teamData } = await teamRes.json();
     const { data: goalsData } = await goalsRes.json();
-    // Filter out GitHub-sourced tasks (read-only)
-    const allTasks: WeeklyTask[] = tasksData ?? [];
-    setTasks(allTasks.filter((t) => t.source !== "github"));
+    setTasks(tasksData ?? []);
     setTeam(teamData ?? []);
     setMonthlyGoals(goalsData ?? []);
+    // Extract project items from snapshot
+    try {
+      const snapshot = await snapshotRes.json();
+      setProjectItems(snapshot?.current?.project?.items ?? []);
+    } catch {
+      setProjectItems([]);
+    }
     setLoaded(true);
   }, [weekId]);
 
@@ -418,11 +507,29 @@ function WeeklyTab() {
 
   async function save(updatedTasks: WeeklyTask[]) {
     setSaving(true);
+    const manualTasks = updatedTasks.filter((t) => t.source !== "github");
     await fetch("/api/goals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tier: "week", weekId, tasks: updatedTasks }),
+      body: JSON.stringify({ tier: "week", weekId, tasks: manualTasks }),
     });
+    const ghTasks = updatedTasks.filter((t) => t.source === "github");
+    await Promise.all(
+      ghTasks.map((t) =>
+        fetch("/api/goals", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tier: "week",
+            weekId,
+            id: t.id,
+            status: t.status,
+            startDate: t.startDate ?? "",
+            deadline: t.deadline,
+          }),
+        })
+      )
+    );
     setSaving(false);
   }
 
@@ -454,21 +561,13 @@ function WeeklyTab() {
     setTasks(tasks.filter((t) => t.id !== id));
   }
 
-  function cycleStatus(id: string) {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
-    const nextIdx =
-      (STATUS_CYCLE.indexOf(task.status) + 1) % STATUS_CYCLE.length;
-    updateTask(id, { status: STATUS_CYCLE[nextIdx] });
-  }
-
   async function copyFromPrevWeek() {
     const prev = prevWeekId(weekId);
     const res = await fetch(`/api/goals?tier=week&weekId=${prev}`);
     const { data } = await res.json();
     if (!data || data.length === 0) return;
     const incomplete = (data as WeeklyTask[]).filter(
-      (t) => t.status !== "done"
+      (t) => t.status !== "done" && t.status !== "closed"
     );
     const existingIds = new Set(tasks.map((t) => t.id));
     const carried = incomplete
@@ -483,25 +582,37 @@ function WeeklyTab() {
 
   if (!loaded) return <p className="text-sm text-gray-500">Loading...</p>;
 
-  const memberNames = team.map((m) => m.name);
-  const tasksByMember = new Map<string, WeeklyTask[]>();
-  for (const name of memberNames) {
-    tasksByMember.set(
-      name,
-      tasks.filter((t) => t.assignee === name)
-    );
+  // Build hierarchy: Monthly Goal → Weekly Goal → PRs
+  // 1. Group weekly goals (github tasks) by goalId (monthly goal)
+  const ghTasks = tasks.filter((t) => t.source === "github");
+  const manualTasks = tasks.filter((t) => t.source !== "github");
+
+  // Build PR lookup by weeklyGoal title
+  const prsByWeeklyGoal = new Map<string, ProjectItem[]>();
+  for (const item of projectItems) {
+    if (item.level !== "Weekly Task" || !item.weeklyGoal) continue;
+    if (!prsByWeeklyGoal.has(item.weeklyGoal))
+      prsByWeeklyGoal.set(item.weeklyGoal, []);
+    prsByWeeklyGoal.get(item.weeklyGoal)!.push(item);
   }
-  // Also include tasks for members not in current team list
-  const knownNames = new Set(memberNames);
-  for (const t of tasks) {
-    if (!knownNames.has(t.assignee)) {
-      if (!tasksByMember.has(t.assignee)) {
-        tasksByMember.set(t.assignee, []);
-        memberNames.push(t.assignee);
-      }
-      tasksByMember.get(t.assignee)!.push(t);
+
+  // Group gh tasks by monthly goal
+  const tasksByMonthlyGoal = new Map<string, WeeklyTask[]>();
+  const ungroupedGhTasks: WeeklyTask[] = [];
+  for (const t of ghTasks) {
+    if (t.goalId) {
+      if (!tasksByMonthlyGoal.has(t.goalId))
+        tasksByMonthlyGoal.set(t.goalId, []);
+      tasksByMonthlyGoal.get(t.goalId)!.push(t);
+    } else {
+      ungroupedGhTasks.push(t);
     }
   }
+
+  // Order monthly goals: those with linked tasks first
+  const goalsWithTasks = monthlyGoals.filter(
+    (g) => tasksByMonthlyGoal.has(g.id)
+  );
 
   return (
     <div className="space-y-3 rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
@@ -529,94 +640,313 @@ function WeeklyTab() {
         </button>
       </div>
 
-      {memberNames.map((name) => {
-        const memberTasks = tasksByMember.get(name) ?? [];
+      {/* Hierarchical view: Monthly Goal → Weekly Goal → PRs */}
+      {goalsWithTasks.map((goal) => {
+        const weeklyGoals = tasksByMonthlyGoal.get(goal.id) ?? [];
         return (
           <div
-            key={name}
-            className="rounded border border-gray-200 p-3 dark:border-gray-700"
+            key={goal.id}
+            className="rounded-lg border border-gray-200 dark:border-gray-700"
           >
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="font-medium text-gray-900 dark:text-white">
-                {name}
-              </h3>
-              <button
-                onClick={() => addTask(name)}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                + Add task
-              </button>
+            {/* Monthly Goal header */}
+            <div className="border-b border-gray-100 bg-gray-50/50 px-4 py-2 dark:border-gray-800 dark:bg-gray-800/30">
+              <div className="flex items-center gap-2">
+                <span className={`text-sm ${STATUS_COLOR[goal.status]}`}>
+                  {STATUS_ICON[goal.status]}
+                </span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {goal.title}
+                </span>
+                {goal.source === "github" && (
+                  <span className="rounded bg-gray-800 px-1 py-0.5 text-[9px] text-gray-200">
+                    DEV
+                  </span>
+                )}
+                <span className="text-xs text-gray-400">Monthly Goal</span>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              {memberTasks.map((task) => (
-                <div key={task.id} className="flex items-center gap-2">
-                  <button
-                    onClick={() => cycleStatus(task.id)}
-                    className={`text-lg ${STATUS_COLOR[task.status]}`}
-                    title={task.status}
-                  >
-                    {STATUS_ICON[task.status]}
-                  </button>
-                  <input
-                    type="text"
-                    value={task.content}
-                    onChange={(e) =>
-                      updateTask(task.id, { content: e.target.value })
-                    }
-                    placeholder="Task content"
-                    className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  />
-                  <input
-                    type="date"
-                    value={task.startDate ?? ""}
-                    onChange={(e) =>
-                      updateTask(task.id, {
-                        startDate: e.target.value || undefined,
-                      })
-                    }
-                    title="Start date"
-                    className="w-36 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  />
-                  <input
-                    type="date"
-                    value={task.deadline}
-                    onChange={(e) =>
-                      updateTask(task.id, { deadline: e.target.value })
-                    }
-                    title="Deadline"
-                    className="w-36 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  />
-                  <select
-                    value={task.goalId ?? ""}
-                    onChange={(e) =>
-                      updateTask(task.id, {
-                        goalId: e.target.value || undefined,
-                      })
-                    }
-                    className="w-36 truncate rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                  >
-                    <option value="">No goal</option>
-                    {monthlyGoals.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.title}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => removeTask(task.id)}
-                    className="text-sm text-red-500 hover:text-red-700"
-                  >
-                    x
-                  </button>
-                </div>
-              ))}
-              {memberTasks.length === 0 && (
-                <p className="text-xs text-gray-400">No tasks</p>
-              )}
+
+            {/* Weekly Goals under this monthly goal */}
+            <div className="divide-y divide-gray-50 dark:divide-gray-800/50">
+              {weeklyGoals.map((task) => {
+                const linkedPRs = prsByWeeklyGoal.get(task.content) ?? [];
+                return (
+                  <div key={task.id} className="px-4 py-2.5">
+                    {/* Weekly Goal row */}
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={task.status}
+                        onChange={(e) =>
+                          updateTask(task.id, {
+                            status: e.target.value as GoalStatus,
+                          })
+                        }
+                        className={`rounded border border-gray-300 px-1 py-0.5 text-xs ${STATUS_COLOR[task.status]} dark:border-gray-700 dark:bg-gray-800`}
+                      >
+                        {ALL_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {STATUS_LABEL[s]}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="rounded bg-gray-800 px-1 py-0.5 text-[9px] text-gray-200">
+                        DEV
+                      </span>
+                      {task.githubUrl ? (
+                        <a
+                          href={task.githubUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-gray-900 hover:text-blue-500 dark:text-white"
+                        >
+                          {task.content}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {task.content}
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-400">
+                        {dn(task.assignee)}
+                      </span>
+                      <div className="ml-auto flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={task.startDate ?? ""}
+                          onChange={(e) =>
+                            updateTask(task.id, {
+                              startDate: e.target.value || undefined,
+                            })
+                          }
+                          title="Start date"
+                          className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                        />
+                        <input
+                          type="date"
+                          value={task.deadline}
+                          onChange={(e) =>
+                            updateTask(task.id, { deadline: e.target.value })
+                          }
+                          title="Deadline"
+                          className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Linked PRs */}
+                    {linkedPRs.length > 0 && (
+                      <div className="ml-6 mt-1.5 space-y-0.5">
+                        {linkedPRs.map((pr) => (
+                          <div
+                            key={pr.id}
+                            className="flex items-center gap-2 text-xs text-gray-500"
+                          >
+                            <PRStatusBadge status={pr.status} />
+                            {pr.url ? (
+                              <a
+                                href={pr.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline"
+                              >
+                                {pr.repo}#{pr.number}
+                              </a>
+                            ) : (
+                              <span>&mdash;</span>
+                            )}
+                            <span className="truncate text-gray-600 dark:text-gray-400">
+                              {pr.title}
+                            </span>
+                            <span className="ml-auto text-gray-400">
+                              {pr.assignees.length > 0
+                                ? pr.assignees.map(dn).join(", ")
+                                : dn(pr.author ?? "")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
       })}
+
+      {/* Ungrouped GitHub tasks (no monthly goal link) */}
+      {ungroupedGhTasks.length > 0 && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="border-b border-gray-100 bg-gray-50/50 px-4 py-2 dark:border-gray-800 dark:bg-gray-800/30">
+            <span className="text-sm font-semibold text-gray-500">
+              Ungrouped Weekly Goals
+            </span>
+          </div>
+          <div className="divide-y divide-gray-50 dark:divide-gray-800/50">
+            {ungroupedGhTasks.map((task) => {
+              const linkedPRs = prsByWeeklyGoal.get(task.content) ?? [];
+              return (
+                <div key={task.id} className="px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={task.status}
+                      onChange={(e) =>
+                        updateTask(task.id, {
+                          status: e.target.value as GoalStatus,
+                        })
+                      }
+                      className={`rounded border border-gray-300 px-1 py-0.5 text-xs ${STATUS_COLOR[task.status]} dark:border-gray-700 dark:bg-gray-800`}
+                    >
+                      {ALL_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {STATUS_LABEL[s]}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="rounded bg-gray-800 px-1 py-0.5 text-[9px] text-gray-200">
+                      DEV
+                    </span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {task.content}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {dn(task.assignee)}
+                    </span>
+                  </div>
+                  {linkedPRs.length > 0 && (
+                    <div className="ml-6 mt-1.5 space-y-0.5">
+                      {linkedPRs.map((pr) => (
+                        <div
+                          key={pr.id}
+                          className="flex items-center gap-2 text-xs text-gray-500"
+                        >
+                          <PRStatusBadge status={pr.status} />
+                          {pr.url ? (
+                            <a
+                              href={pr.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              {pr.repo}#{pr.number}
+                            </a>
+                          ) : (
+                            <span>&mdash;</span>
+                          )}
+                          <span className="truncate text-gray-600 dark:text-gray-400">
+                            {pr.title}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Manual tasks section */}
+      {manualTasks.length > 0 && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="border-b border-gray-100 bg-gray-50/50 px-4 py-2 dark:border-gray-800 dark:bg-gray-800/30">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-500">
+                Manual Tasks
+              </span>
+              <button
+                onClick={() => addTask(team[0]?.name ?? "unassigned")}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                + Add
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5 px-4 py-2.5">
+            {manualTasks.map((task) => (
+              <div key={task.id} className="flex items-center gap-2">
+                <select
+                  value={task.status}
+                  onChange={(e) =>
+                    updateTask(task.id, {
+                      status: e.target.value as GoalStatus,
+                    })
+                  }
+                  className={`rounded border border-gray-300 px-1 py-0.5 text-xs ${STATUS_COLOR[task.status]} dark:border-gray-700 dark:bg-gray-800`}
+                >
+                  {ALL_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={task.content}
+                  onChange={(e) =>
+                    updateTask(task.id, { content: e.target.value })
+                  }
+                  placeholder="Task content"
+                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                />
+                <input
+                  type="date"
+                  value={task.startDate ?? ""}
+                  onChange={(e) =>
+                    updateTask(task.id, {
+                      startDate: e.target.value || undefined,
+                    })
+                  }
+                  title="Start date"
+                  className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                />
+                <input
+                  type="date"
+                  value={task.deadline}
+                  onChange={(e) =>
+                    updateTask(task.id, { deadline: e.target.value })
+                  }
+                  title="Deadline"
+                  className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                />
+                <select
+                  value={task.goalId ?? ""}
+                  onChange={(e) =>
+                    updateTask(task.id, {
+                      goalId: e.target.value || undefined,
+                    })
+                  }
+                  className="w-32 truncate rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  <option value="">No goal</option>
+                  {monthlyGoals.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => removeTask(task.id)}
+                  className="text-sm text-red-500 hover:text-red-700"
+                >
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add manual task when no manual tasks exist */}
+      {manualTasks.length === 0 && (
+        <button
+          onClick={() => addTask(team[0]?.name ?? "unassigned")}
+          className="rounded bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
+        >
+          + Add manual task
+        </button>
+      )}
 
       <button
         onClick={() => save(tasks)}
