@@ -147,6 +147,7 @@ function parseProjectItem(node: GraphQLNode): ProjectItem | null {
     assignees: content.assignees?.nodes.map((a) => a.login) ?? [],
     sprint: extractFieldValue(fields, "Sprint"),
     monthlyGoal: extractFieldValue(fields, "Monthly Goal"),
+    weeklyGoal: extractFieldValue(fields, "Weekly Goal"),
     status: extractFieldValue(fields, "Status"),
     level: extractFieldValue(fields, "Level"),
     merged: content.merged ?? false,
@@ -225,21 +226,31 @@ export async function collectProjectMetrics(
   const allItems = await fetchAllProjectItems(octokit);
   const sprint = weekIdToSprint(weekId);
 
-  // Filter items for this sprint
+  // Filter items for this sprint (exclude goal-level items — only PRs/issues)
+  const goalLevels = new Set(["Weekly Goal", "Monthly Goal", "Objective"]);
   const items = allItems.filter((item) => {
     if (!item.sprint) return false;
-    // Sprint field may contain "W12" or just the number
+    if (item.level && goalLevels.has(item.level)) return false;
     const itemSprint = item.sprint.replace(/^W0?/, "W");
     const targetSprint = sprint.replace(/^W0?/, "W");
     return itemSprint === targetSprint;
   });
 
-  // Group by goal
+  // Group by monthly goal
   const byGoal: Record<string, ProjectItem[]> = {};
   for (const item of items) {
     const goal = item.monthlyGoal ?? "Ungrouped";
     if (!byGoal[goal]) byGoal[goal] = [];
     byGoal[goal].push(item);
+  }
+
+  // Group by weekly goal (only items with level "Weekly Task")
+  const byWeeklyGoal: Record<string, ProjectItem[]> = {};
+  for (const item of items) {
+    if (item.level !== "Weekly Task") continue;
+    const wg = item.weeklyGoal ?? "Ungrouped";
+    if (!byWeeklyGoal[wg]) byWeeklyGoal[wg] = [];
+    byWeeklyGoal[wg].push(item);
   }
 
   // Group by assignee
@@ -266,6 +277,7 @@ export async function collectProjectMetrics(
     sprint,
     items,
     byGoal,
+    byWeeklyGoal,
     byAssignee,
     byStatus,
     goalProgress,
