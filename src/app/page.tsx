@@ -1,7 +1,7 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { Suspense } from "react";
-import { getDashboardSummary, getSnapshot } from "@/lib/store/kv";
+import { getDashboardSummary, getSnapshot, getRedis } from "@/lib/store/kv";
 import { getPreviousWeekId } from "@/lib/week";
 import { GoalProgressServer } from "@/components/goals/goal-progress-server";
 import { GoalProgressSkeleton } from "@/components/goals/goal-progress-skeleton";
@@ -35,11 +35,19 @@ export default async function Home() {
     );
   }
 
-  // Fetch previous week snapshot for Week-over-Week comparison
+  // Fetch previous week snapshot and display names
   let previousSnapshot = null;
+  let displayNames: Record<string, string> = {};
   try {
     const prevWeekId = getPreviousWeekId(summary.current.weekId);
-    previousSnapshot = await getSnapshot(prevWeekId);
+    const [prevSnap, dnData] = await Promise.all([
+      getSnapshot(prevWeekId),
+      getRedis().get<string>("config:displaynames"),
+    ]);
+    previousSnapshot = prevSnap;
+    if (dnData) {
+      displayNames = typeof dnData === "string" ? JSON.parse(dnData) : dnData;
+    }
   } catch {
     // Previous week data not available
   }
@@ -50,7 +58,7 @@ export default async function Home() {
       <Suspense fallback={<GoalProgressSkeleton />}>
         <GoalProgressServer weekId={summary.current.weekId} />
       </Suspense>
-      <DashboardContent summary={summary} previousSnapshot={previousSnapshot} />
+      <DashboardContent summary={summary} previousSnapshot={previousSnapshot} displayNames={displayNames} />
     </div>
   );
 }

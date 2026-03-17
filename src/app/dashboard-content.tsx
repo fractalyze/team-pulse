@@ -10,6 +10,7 @@ import type { DashboardSummary, WeeklySnapshot, PRInfo, ProjectItem, GoalProgres
 interface DashboardContentProps {
   summary: DashboardSummary;
   previousSnapshot?: WeeklySnapshot | null;
+  displayNames?: Record<string, string>;
 }
 
 function reviewLatencyColor(
@@ -74,13 +75,15 @@ function StatusBadge({ status }: { status: string | null }) {
   };
   const s = status ?? "Unknown";
   return (
-    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${colors[s] ?? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"}`}>
+    <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium ${colors[s] ?? "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"}`}>
       {s}
     </span>
   );
 }
 
-export function DashboardContent({ summary, previousSnapshot }: DashboardContentProps) {
+export function DashboardContent({ summary, previousSnapshot, displayNames = {} }: DashboardContentProps) {
+  const dn = (name: string) => displayNames[name] ?? name;
+
   const { current, delta } = summary;
   const { github, contextSync } = current;
   const project = current.project;
@@ -241,7 +244,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                     <td className="px-2 py-1 text-gray-700 dark:text-gray-300">
                       {pr.title.slice(0, 60)}{pr.title.length > 60 ? "..." : ""}
                     </td>
-                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{pr.author}</td>
+                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{dn(pr.author)}</td>
                     <td className="px-2 py-1">
                       {pr.reviewers.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
@@ -250,7 +253,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                               key={r}
                               className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
                             >
-                              {r}
+                              {dn(r)}
                             </span>
                           ))}
                         </div>
@@ -289,7 +292,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                   .sort((a, b) => b[1] - a[1])
                   .map(([author, count]) => (
                     <tr key={author} className="border-b border-gray-100 dark:border-gray-800">
-                      <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{author}</td>
+                      <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{dn(author)}</td>
                       <td className="px-2 py-1 text-right text-gray-700 dark:text-gray-300">{count}</td>
                       <td className="px-2 py-1">
                         <div className="h-4 w-24 overflow-hidden rounded bg-gray-100 dark:bg-gray-800">
@@ -367,7 +370,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                                 key={r}
                                 className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900 dark:text-red-300"
                               >
-                                {r}
+                                {dn(r)}
                               </span>
                             ))}
                           </div>
@@ -391,7 +394,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
               <tbody>
                 {reviewerEntries.map(([reviewer, count]) => (
                   <tr key={reviewer} className="border-b border-gray-100 dark:border-gray-800">
-                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{reviewer}</td>
+                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{dn(reviewer)}</td>
                     <td className="px-2 py-1 text-right text-gray-700 dark:text-gray-300">{count}</td>
                     <td className="px-2 py-1">
                       <div className="h-4 w-24 overflow-hidden rounded bg-gray-100 dark:bg-gray-800">
@@ -438,7 +441,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                     <td className="px-2 py-1 text-gray-700 dark:text-gray-300">
                       {pr.title.slice(0, 60)}{pr.title.length > 60 ? "..." : ""}
                     </td>
-                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{pr.author}</td>
+                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{dn(pr.author)}</td>
                     <td className="px-2 py-1">
                       {pr.reviewers.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
@@ -447,7 +450,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                               key={r}
                               className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
                             >
-                              {r}
+                              {dn(r)}
                             </span>
                           ))}
                         </div>
@@ -477,7 +480,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                 Review Queue ({reviewPRs.length})
               </h2>
               <div className="overflow-x-auto">
-                <PRQueueTable prs={reviewPRs} staleColorFn={reviewStaleColor} />
+                <PRQueueTable prs={reviewPRs} staleColorFn={reviewStaleColor} dn={dn} />
               </div>
             </div>
           )}
@@ -488,7 +491,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                 Draft Queue ({draftPRs.length})
               </h2>
               <div className="overflow-x-auto">
-                <PRQueueTable prs={draftPRs} staleColorFn={draftStaleColor} />
+                <PRQueueTable prs={draftPRs} staleColorFn={draftStaleColor} dn={dn} />
               </div>
             </div>
           )}
@@ -536,7 +539,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
         </div>
       )}
 
-      {/* 3a. Weekly Retro Summary */}
+      {/* 3a. Weekly Retro Summary — grouped by Weekly Goal */}
       {project && project.items.length > 0 && (
         <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
           <button
@@ -552,14 +555,61 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
           </button>
           {retroExpanded && (
             <div className="space-y-4 px-4 pb-4">
-              {Object.entries(project.byGoal).map(([goal, items]) => (
-                <div key={goal} className="rounded border border-gray-200 p-3 dark:border-gray-700">
-                  <h3 className="mb-2 text-sm font-bold uppercase text-gray-500">
-                    GOAL: {goal}
-                  </h3>
-                  <RetroGoalSection items={items} />
-                </div>
-              ))}
+              {Object.entries(project.byWeeklyGoal ?? {}).length > 0 ? (
+                Object.entries(project.byWeeklyGoal ?? {}).map(([goalName, goalItems]) => {
+                  const merged = goalItems.filter((i) => i.merged).length;
+                  const total = goalItems.length;
+                  return (
+                    <div key={goalName} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                      {/* Weekly Goal header */}
+                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {goalName}
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-400">
+                            {merged}/{total} merged
+                          </span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className="h-full rounded-full bg-green-500"
+                              style={{ width: `${total > 0 ? (merged / total) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      {/* PR table */}
+                      <RetroTable items={goalItems} dn={dn} />
+                    </div>
+                  );
+                })
+              ) : (
+                /* Fallback: group by monthly goal as table */
+                Object.entries(project.byGoal).map(([goal, goalItems]) => {
+                  const merged = goalItems.filter((i) => i.merged).length;
+                  return (
+                    <div key={goal} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {goal}
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-400">
+                            {merged}/{goalItems.length} merged
+                          </span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className="h-full rounded-full bg-green-500"
+                              style={{ width: `${goalItems.length > 0 ? (merged / goalItems.length) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <RetroTable items={goalItems} dn={dn} />
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>
@@ -626,7 +676,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                       <div className="mt-2 flex flex-wrap gap-1">
                         {goal.assignees.map((a) => (
                           <span key={a} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                            {a}
+                            {dn(a)}
                           </span>
                         ))}
                       </div>
@@ -668,7 +718,7 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
                 return (
                   <div key={assignee} className="rounded border border-gray-200 p-3 dark:border-gray-700">
                     <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
-                      {assignee}
+                      {dn(assignee)}
                     </h3>
                     <div className="mb-2 flex gap-3 text-xs">
                       <span className="text-green-600">{merged} merged</span>
@@ -793,9 +843,11 @@ export function DashboardContent({ summary, previousSnapshot }: DashboardContent
 function PRQueueTable({
   prs,
   staleColorFn,
+  dn,
 }: {
   prs: (PRInfo & { bizDays: number })[];
   staleColorFn: (bizDays: number) => string;
+  dn: (name: string) => string;
 }) {
   return (
     <table className="w-full text-sm">
@@ -818,7 +870,7 @@ function PRQueueTable({
                 {pr.title.slice(0, 40)}{pr.title.length > 40 ? "..." : ""}
               </span>
             </td>
-            <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{pr.author}</td>
+            <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{dn(pr.author)}</td>
             <td className={`px-2 py-1 text-right font-medium ${staleColorFn(pr.bizDays)}`}>
               {pr.bizDays}d
             </td>
@@ -830,7 +882,7 @@ function PRQueueTable({
                       key={r}
                       className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
                     >
-                      {r}
+                      {dn(r)}
                     </span>
                   ))}
                 </div>
@@ -845,8 +897,53 @@ function PRQueueTable({
   );
 }
 
+/** Retro PR table: status, linkable title with repo chip, author. */
+function RetroTable({ items, dn }: { items: ProjectItem[]; dn: (name: string) => string }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full table-fixed text-sm">
+        <thead>
+          <tr className="border-b border-gray-100 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-800/30">
+            <th className="w-24 px-4 py-1.5 text-left text-xs font-medium text-gray-500">Status</th>
+            <th className="px-4 py-1.5 text-left text-xs font-medium text-gray-500">Title</th>
+            <th className="w-32 px-4 py-1.5 text-left text-xs font-medium text-gray-500">Author</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id} className="border-b border-gray-50 last:border-b-0 dark:border-gray-800/50">
+              <td className="px-4 py-1.5">
+                <StatusBadge status={item.status} />
+              </td>
+              <td className="px-4 py-1.5">
+                <div className="flex items-center gap-2">
+                  {item.repo && (
+                    <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                      {item.repo}
+                    </span>
+                  )}
+                  {item.url ? (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="truncate text-gray-900 hover:text-blue-600 dark:text-gray-200 dark:hover:text-blue-400">
+                      {item.title}
+                    </a>
+                  ) : (
+                    <span className="truncate text-gray-700 dark:text-gray-300">{item.title}</span>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-1.5 text-gray-500">
+                {item.assignees.length > 0 ? item.assignees.map(dn).join(", ") : dn(item.author ?? "")}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Retro goal section: group items by assignee within a goal. */
-function RetroGoalSection({ items }: { items: ProjectItem[] }) {
+function RetroGoalSection({ items, dn }: { items: ProjectItem[]; dn: (name: string) => string }) {
   const byAssignee = new Map<string, ProjectItem[]>();
   for (const item of items) {
     const assignees = item.assignees.length > 0 ? item.assignees : [item.author ?? "unassigned"];
@@ -860,7 +957,7 @@ function RetroGoalSection({ items }: { items: ProjectItem[] }) {
     <div className="space-y-2">
       {[...byAssignee.entries()].map(([assignee, assigneeItems]) => (
         <div key={assignee} className="ml-2">
-          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{assignee}:</p>
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{dn(assignee)}:</p>
           <div className="ml-4 space-y-0.5">
             {assigneeItems.map((item) => (
               <div key={item.id} className="flex items-center gap-2 text-sm">
