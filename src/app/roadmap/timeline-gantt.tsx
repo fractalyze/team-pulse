@@ -11,12 +11,14 @@ const BAR_BG: Record<GoalStatus, string> = {
   done: "bg-green-500 dark:bg-green-600",
   in_progress: "bg-blue-500 dark:bg-blue-600",
   not_started: "bg-gray-300 dark:bg-gray-600",
+  closed: "bg-red-400 dark:bg-red-600",
 };
 
 const BAR_TEXT: Record<GoalStatus, string> = {
   done: "text-white",
   in_progress: "text-white",
   not_started: "text-gray-700 dark:text-gray-200",
+  closed: "text-white",
 };
 
 interface TimelineGanttProps {
@@ -261,6 +263,10 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
             <span className="flex items-center gap-1">
               <span className="inline-block h-2.5 w-4 rounded bg-gray-300 dark:bg-gray-600" />
               not started
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-4 rounded bg-red-400 dark:bg-red-600" />
+              closed
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block h-2.5 w-4 rounded ring-2 ring-red-500" />

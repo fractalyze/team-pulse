@@ -9,6 +9,7 @@ const STATUS_ICON: Record<GoalStatus, string> = {
   done: "\u2713",
   in_progress: "\u25D0",
   not_started: "\u25CB",
+  closed: "\u2715",
 };
 
 const CHIP_STYLE: Record<GoalStatus, string> = {
@@ -17,6 +18,7 @@ const CHIP_STYLE: Record<GoalStatus, string> = {
     "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   not_started:
     "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+  closed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
 };
 
 interface TimelineMonthProps {
