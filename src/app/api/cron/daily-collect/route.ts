@@ -1,12 +1,12 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { NextResponse } from "next/server";
-import { collectGitHubMetrics } from "@/lib/collectors/github";
+import { collectGitHubMetrics, computePendingReviews } from "@/lib/collectors/github";
 import { collectProjectMetrics } from "@/lib/collectors/github-projects";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { syncGitHubProjectToRedis } from "@/lib/collectors/github-project";
 import { assembleSnapshot } from "@/lib/generators/metrics";
-import { saveSnapshot } from "@/lib/store/kv";
+import { saveSnapshot, saveDailyPending } from "@/lib/store/kv";
 import { getWeekId } from "@/lib/week";
 import { getTeam } from "@/lib/team";
 
@@ -41,6 +41,10 @@ export async function GET(request: Request) {
       nextHardDeadline: null,
     }, project);
     await saveSnapshot(snapshot);
+
+    // Save daily pending review counts
+    const pendingEntry = computePendingReviews(github);
+    await saveDailyPending(weekId, pendingEntry);
 
     return NextResponse.json({
       status: "success",

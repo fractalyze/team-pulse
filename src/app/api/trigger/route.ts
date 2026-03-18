@@ -1,12 +1,12 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { NextResponse } from "next/server";
-import { collectGitHubMetrics } from "@/lib/collectors/github";
+import { collectGitHubMetrics, computePendingReviews } from "@/lib/collectors/github";
 import { collectProjectMetrics } from "@/lib/collectors/github-projects";
 import { collectContextSyncMetrics } from "@/lib/collectors/notion";
 import { syncGitHubProjectToRedis } from "@/lib/collectors/github-project";
 import { assembleSnapshot, computeDelta } from "@/lib/generators/metrics";
-import { saveSnapshot, getSnapshot } from "@/lib/store/kv";
+import { saveSnapshot, getSnapshot, saveDailyPending } from "@/lib/store/kv";
 import { getWeekId, getPreviousWeekId } from "@/lib/week";
 import { getTeam } from "@/lib/team";
 import type { WeeklySnapshot } from "@/lib/types";
@@ -217,6 +217,7 @@ export async function POST(request: Request) {
         github,
       };
       await saveSnapshot(snapshot);
+      await saveDailyPending(weekId, computePendingReviews(github));
       return NextResponse.json({
         status: "saved",
         source: "github",
@@ -313,6 +314,7 @@ export async function POST(request: Request) {
 
     if (actions.includes("collect")) {
       await saveSnapshot(currentSnapshot);
+      await saveDailyPending(weekId, computePendingReviews(github));
       results.collect = "saved";
     }
 

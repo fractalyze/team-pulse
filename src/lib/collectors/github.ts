@@ -10,6 +10,7 @@ import type {
   GitHubMetrics,
   ReviewInfo,
   ReviewHealthMetrics,
+  DailyPendingEntry,
 } from "../types";
 
 function getOctokit(): Octokit {
@@ -452,5 +453,32 @@ export async function collectGitHubMetrics(
     commitsByAuthor,
     reviewHealth,
   };
+}
+
+/** Compute pending review counts per reviewer from GitHub metrics. */
+export function computePendingReviews(
+  github: GitHubMetrics
+): DailyPendingEntry {
+  const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const now = new Date();
+  const day = DAY_NAMES[now.getUTCDay()];
+  const date = now.toISOString().slice(0, 10);
+
+  const byReviewer: Record<string, number> = {};
+  let total = 0;
+
+  for (const repo of github.repos) {
+    for (const pr of repo.open) {
+      if (pr.draft) continue;
+      for (const reviewer of pr.reviewers) {
+        if (isBot(reviewer)) continue;
+        if (reviewer === pr.author) continue;
+        byReviewer[reviewer] = (byReviewer[reviewer] ?? 0) + 1;
+        total++;
+      }
+    }
+  }
+
+  return { day, date, byReviewer, total };
 }
 

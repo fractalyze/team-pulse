@@ -1,7 +1,7 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { Redis } from "@upstash/redis";
-import type { WeeklySnapshot, DashboardSummary } from "../types";
+import type { WeeklySnapshot, DashboardSummary, WeeklyPendingReviews, DailyPendingEntry } from "../types";
 import { getPreviousWeekId, getWeekRange } from "../week";
 import { computeDelta } from "../generators/metrics";
 
@@ -115,6 +115,48 @@ export async function getDashboardSummary(
     nextWeekId,
     allWeekIds,
   };
+}
+
+// --- Daily Pending Reviews ---
+
+function pendingKey(weekId: string): string {
+  return `daily-pending:${weekId}`;
+}
+
+/** Save a daily pending review entry (appends or updates for the day). */
+export async function saveDailyPending(
+  weekId: string,
+  entry: DailyPendingEntry
+): Promise<void> {
+  const redis = getRedis();
+  const key = pendingKey(weekId);
+  const existing = await redis.get<string>(key);
+
+  let data: WeeklyPendingReviews;
+  if (existing) {
+    data = typeof existing === "string" ? JSON.parse(existing) : existing;
+    // Replace entry for the same day, or append
+    const idx = data.entries.findIndex((e) => e.day === entry.day);
+    if (idx >= 0) {
+      data.entries[idx] = entry;
+    } else {
+      data.entries.push(entry);
+    }
+  } else {
+    data = { weekId, entries: [entry] };
+  }
+
+  await redis.set(key, JSON.stringify(data));
+}
+
+/** Get weekly pending reviews for a given week. */
+export async function getDailyPending(
+  weekId: string
+): Promise<WeeklyPendingReviews | null> {
+  const redis = getRedis();
+  const data = await redis.get<string>(pendingKey(weekId));
+  if (!data) return null;
+  return typeof data === "string" ? JSON.parse(data) : data;
 }
 
 /** Get multiple snapshots for trend charts. */
