@@ -157,7 +157,8 @@ export interface WeeklyTask {
   weekId: string;
   assignee: string;
   content: string;
-  deadline: string;
+  estimatedDeadline: string;
+  actualDeadline?: string; // "YYYY-MM-DD"
   status: GoalStatus;
   startDate?: string; // "YYYY-MM-DD"
   goalId?: string; // MonthlyGoal.id reference
@@ -274,6 +275,20 @@ export interface ProjectMetrics {
   byAssignee: Record<string, ProjectItem[]>;
   byStatus: Record<string, number>;
   goalProgress: GoalProgressSummary[];
+}
+
+// --- Daily Pending Review Tracking ---
+
+export interface DailyPendingEntry {
+  day: string; // "Mon" | "Tue" | "Wed" | "Thu" | "Fri"
+  date: string; // "2026-03-16"
+  byReviewer: Record<string, number>; // reviewer login → pending review count
+  total: number;
+}
+
+export interface WeeklyPendingReviews {
+  weekId: string;
+  entries: DailyPendingEntry[];
 }
 
 // --- Weekly Snapshot (stored in KV) ---

@@ -1,8 +1,9 @@
 // Copyright 2026 Fractalyze Inc. All rights reserved.
 
 import { Suspense } from "react";
-import { getDashboardSummary, getSnapshot, getRedis } from "@/lib/store/kv";
+import { getDashboardSummary, getSnapshot, getRedis, getDailyPending } from "@/lib/store/kv";
 import { getPreviousWeekId } from "@/lib/week";
+import { getMergedWeeklyTasks } from "@/lib/store/goals-merged";
 import { GoalProgressServer } from "@/components/goals/goal-progress-server";
 import { GoalProgressSkeleton } from "@/components/goals/goal-progress-skeleton";
 import { DashboardContent } from "./dashboard-content";
@@ -35,16 +36,22 @@ export default async function Home() {
     );
   }
 
-  // Fetch previous week snapshot and display names
+  // Fetch previous week snapshot, display names, daily pending reviews, and weekly tasks
   let previousSnapshot = null;
   let displayNames: Record<string, string> = {};
+  let dailyPending = null;
+  let weeklyTasks: Awaited<ReturnType<typeof getMergedWeeklyTasks>> = [];
   try {
     const prevWeekId = getPreviousWeekId(summary.current.weekId);
-    const [prevSnap, dnData] = await Promise.all([
+    const [prevSnap, dnData, pendingData, tasks] = await Promise.all([
       getSnapshot(prevWeekId),
       getRedis().get<string>("config:displaynames"),
+      getDailyPending(summary.current.weekId),
+      getMergedWeeklyTasks(summary.current.weekId),
     ]);
     previousSnapshot = prevSnap;
+    dailyPending = pendingData;
+    weeklyTasks = tasks;
     if (dnData) {
       displayNames = typeof dnData === "string" ? JSON.parse(dnData) : dnData;
     }
@@ -58,7 +65,7 @@ export default async function Home() {
       <Suspense fallback={<GoalProgressSkeleton />}>
         <GoalProgressServer weekId={summary.current.weekId} />
       </Suspense>
-      <DashboardContent summary={summary} previousSnapshot={previousSnapshot} displayNames={displayNames} />
+      <DashboardContent summary={summary} previousSnapshot={previousSnapshot} displayNames={displayNames} dailyPending={dailyPending} weeklyTasks={weeklyTasks} />
     </div>
   );
 }

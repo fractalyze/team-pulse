@@ -3,14 +3,29 @@
 "use client";
 
 import { useState } from "react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 import { MetricCard } from "@/components/charts/metric-card";
 import { PRActivityChart } from "@/components/charts/pr-activity";
-import type { DashboardSummary, WeeklySnapshot, PRInfo, ProjectItem, GoalProgressSummary } from "@/lib/types";
+import type { DashboardSummary, WeeklySnapshot, WeeklyTask, PRInfo, ProjectItem, GoalProgressSummary, WeeklyPendingReviews } from "@/lib/types";
+import { computeDeadlineAccuracy } from "@/lib/deadline-accuracy";
+import type { DeadlineAccuracy } from "@/lib/deadline-accuracy";
 
 interface DashboardContentProps {
   summary: DashboardSummary;
   previousSnapshot?: WeeklySnapshot | null;
   displayNames?: Record<string, string>;
+  dailyPending?: WeeklyPendingReviews | null;
+  weeklyTasks?: WeeklyTask[];
 }
 
 function reviewLatencyColor(
@@ -81,7 +96,78 @@ function StatusBadge({ status }: { status: string | null }) {
   );
 }
 
-export function DashboardContent({ summary, previousSnapshot, displayNames = {} }: DashboardContentProps) {
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-2">
+      <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+      <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+        {label}
+      </span>
+      <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+    </div>
+  );
+}
+
+function DeadlineAccuracyDetail({ tasks, accuracy }: { tasks: WeeklyTask[]; accuracy: DeadlineAccuracy }) {
+  const measurable = tasks.filter(
+    (t) => t.status === "done" && t.estimatedDeadline && t.actualDeadline
+  );
+
+  return (
+    <div className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
+      <h2 className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">
+        Deadline Accuracy Detail
+      </h2>
+      {measurable.length > 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">Task</th>
+                <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">Assignee</th>
+                <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Est.</th>
+                <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Actual</th>
+                <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Delta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {measurable.map((t) => {
+                const est = new Date(t.estimatedDeadline).getTime();
+                const act = new Date(t.actualDeadline!).getTime();
+                const delta = Math.round((est - act) / 86_400_000);
+                return (
+                  <tr key={t.id} className="border-b border-gray-100 dark:border-gray-800">
+                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">
+                      {t.content.slice(0, 50)}{t.content.length > 50 ? "..." : ""}
+                    </td>
+                    <td className="px-2 py-1 text-gray-500">{t.assignee}</td>
+                    <td className="px-2 py-1 text-right text-gray-500">{t.estimatedDeadline.slice(5)}</td>
+                    <td className="px-2 py-1 text-right text-gray-500">{t.actualDeadline!.slice(5)}</td>
+                    <td className={`px-2 py-1 text-right font-medium ${delta >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {delta > 0 ? `+${delta}d` : `${delta}d`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500">
+          No completed tasks with both estimated and actual deadlines.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function deadlineAccuracyColor(rate: number): "green" | "yellow" | "red" {
+  if (rate >= 80) return "green";
+  if (rate >= 60) return "yellow";
+  return "red";
+}
+
+export function DashboardContent({ summary, previousSnapshot, displayNames = {}, dailyPending, weeklyTasks = [] }: DashboardContentProps) {
   const dn = (name: string) => displayNames[name] ?? name;
 
   const { current, delta } = summary;
@@ -147,6 +233,8 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {} 
   const reviewerEntries = Object.entries(github.reviewHealth.byReviewer)
     .sort((a, b) => b[1] - a[1]);
 
+  const accuracy = computeDeadlineAccuracy(weeklyTasks);
+
   const toggle = (card: string) =>
     setExpandedCard(expandedCard === card ? null : card);
 
@@ -160,7 +248,227 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {} 
 
   return (
     <>
-      {/* Metric cards */}
+      {/* ── OKR & Goals ─────────────────────────── */}
+      <SectionDivider label="OKR & Goals" />
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+        <div className="cursor-pointer" onClick={() => toggle("deadline-accuracy")}>
+          <MetricCard
+            title="Deadline Accuracy"
+            value={accuracy.totalMeasurable > 0 ? `${accuracy.onTimeRate}%` : "N/A"}
+            subtitle={
+              accuracy.totalMeasurable > 0
+                ? `${accuracy.onTimeCount}/${accuracy.totalMeasurable} on time · avg delta ${accuracy.avgDeltaDays ?? 0}d`
+                : "no measurable tasks"
+            }
+            color={accuracy.totalMeasurable > 0 ? deadlineAccuracyColor(accuracy.onTimeRate) : "green"}
+          />
+        </div>
+      </div>
+
+      {/* Expanded: Deadline Accuracy detail */}
+      {expandedCard === "deadline-accuracy" && (
+        <DeadlineAccuracyDetail tasks={weeklyTasks} accuracy={accuracy} />
+      )}
+
+      {/* 3a. Weekly Retro Summary — grouped by Weekly Goal */}
+      {project && project.items.length > 0 && (
+        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
+          <button
+            onClick={() => setRetroExpanded(!retroExpanded)}
+            className="flex w-full items-center justify-between p-4"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Weekly Retro: {project.sprint}
+            </h2>
+            <span className="text-sm text-gray-500">
+              {retroExpanded ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {retroExpanded && (
+            <div className="space-y-4 px-4 pb-4">
+              {Object.entries(project.byWeeklyGoal ?? {}).length > 0 ? (
+                Object.entries(project.byWeeklyGoal ?? {}).map(([goalName, goalItems]) => {
+                  const merged = goalItems.filter((i) => i.merged).length;
+                  const total = goalItems.length;
+                  return (
+                    <div key={goalName} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {goalName}
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-400">
+                            {merged}/{total} merged
+                          </span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className="h-full rounded-full bg-green-500"
+                              style={{ width: `${total > 0 ? (merged / total) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <RetroTable items={goalItems} dn={dn} />
+                    </div>
+                  );
+                })
+              ) : (
+                Object.entries(project.byGoal).map(([goal, goalItems]) => {
+                  const merged = goalItems.filter((i) => i.merged).length;
+                  return (
+                    <div key={goal} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {goal}
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-400">
+                            {merged}/{goalItems.length} merged
+                          </span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className="h-full rounded-full bg-green-500"
+                              style={{ width: `${goalItems.length > 0 ? (merged / goalItems.length) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <RetroTable items={goalItems} dn={dn} />
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3b. Goal Health */}
+      {project && project.goalProgress.length > 0 && (
+        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
+          <button
+            onClick={() => setGoalHealthExpanded(!goalHealthExpanded)}
+            className="flex w-full items-center justify-between p-4"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Goal Health
+            </h2>
+            <span className="text-sm text-gray-500">
+              {goalHealthExpanded ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {goalHealthExpanded && (
+            <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
+              {project.goalProgress.map((goal) => {
+                const prev = previousGoalMap.get(goal.goalName);
+                const mergedDelta = prev ? goal.mergedCount - prev.mergedCount : null;
+                const inReviewDelta = prev ? goal.inReviewCount - prev.inReviewCount : null;
+                return (
+                  <div key={goal.goalName} className="rounded border border-gray-200 p-3 dark:border-gray-700">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {goal.goalName}
+                      </h3>
+                      <span className="text-sm font-bold text-blue-600">{goal.progressPercent}%</span>
+                    </div>
+                    <div className="mb-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div
+                        className="h-full rounded-full bg-green-500"
+                        style={{ width: `${goal.progressPercent}%` }}
+                      />
+                    </div>
+                    <div className="flex gap-3 text-xs text-gray-500">
+                      <span className="text-green-600">
+                        {goal.mergedCount} merged
+                        {mergedDelta !== null && mergedDelta !== 0 && (
+                          <span className={mergedDelta > 0 ? "ml-1 text-green-500" : "ml-1 text-red-500"}>
+                            {mergedDelta > 0 ? `+${mergedDelta}` : mergedDelta}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-blue-600">
+                        {goal.inReviewCount} in review
+                        {inReviewDelta !== null && inReviewDelta !== 0 && (
+                          <span className={inReviewDelta > 0 ? "ml-1 text-blue-500" : "ml-1 text-red-500"}>
+                            {inReviewDelta > 0 ? `+${inReviewDelta}` : inReviewDelta}
+                          </span>
+                        )}
+                      </span>
+                      <span>{goal.draftCount} draft</span>
+                      {goal.closedCount > 0 && <span className="text-red-500">{goal.closedCount} closed</span>}
+                    </div>
+                    {goal.assignees.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {goal.assignees.map((a) => (
+                          <span key={a} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                            {dn(a)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3c. Individual Summary */}
+      {project && Object.keys(project.byAssignee).length > 0 && (
+        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
+          <button
+            onClick={() => setIndividualExpanded(!individualExpanded)}
+            className="flex w-full items-center justify-between p-4"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Individual Summary
+            </h2>
+            <span className="text-sm text-gray-500">
+              {individualExpanded ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {individualExpanded && (
+            <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
+              {Object.entries(project.byAssignee).map(([assignee, items]) => {
+                const merged = items.filter((i) => i.merged).length;
+                const inReview = items.filter((i) => i.status === "In Review").length;
+                const draft = items.filter((i) => i.status === "Draft").length;
+                const goalGroups = new Map<string, number>();
+                for (const item of items) {
+                  const g = item.monthlyGoal ?? "Ungrouped";
+                  goalGroups.set(g, (goalGroups.get(g) ?? 0) + 1);
+                }
+                return (
+                  <div key={assignee} className="rounded border border-gray-200 p-3 dark:border-gray-700">
+                    <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
+                      {dn(assignee)}
+                    </h3>
+                    <div className="mb-2 flex gap-3 text-xs">
+                      <span className="text-green-600">{merged} merged</span>
+                      <span className="text-blue-600">{inReview} in review</span>
+                      <span className="text-gray-500">{draft} draft</span>
+                    </div>
+                    <div className="space-y-1">
+                      {[...goalGroups.entries()].map(([goal, count]) => (
+                        <div key={goal} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-600 dark:text-gray-400">{goal}</span>
+                          <span className="font-medium text-gray-700 dark:text-gray-300">{count} items</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── GitHub ─────────────────────────── */}
+      <SectionDivider label="GitHub" />
+
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <div className="cursor-pointer" onClick={() => toggle("merged")}>
           <MetricCard
@@ -204,14 +512,6 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {} 
             delta={delta?.prsOpenDelta}
             subtitle={`${reviewPRs.length} in review · ${draftPRs.length} draft`}
             color="yellow"
-          />
-        </div>
-        <div className="cursor-pointer" onClick={() => toggle("actions")}>
-          <MetricCard
-            title="Action Items"
-            value={`${doneActions}/${totalActions}`}
-            subtitle={`${contextSync.totalSessions} sync sessions`}
-            color={actionItemsColor(doneActions, totalActions)}
           />
         </div>
       </div>
@@ -382,35 +682,96 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {} 
               </table>
             </div>
           )}
-          {reviewerEntries.length > 0 && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">Reviewer</th>
-                  <th className="px-2 py-1 text-right font-medium text-gray-600 dark:text-gray-400">Reviews</th>
-                  <th className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reviewerEntries.map(([reviewer, count]) => (
-                  <tr key={reviewer} className="border-b border-gray-100 dark:border-gray-800">
-                    <td className="px-2 py-1 text-gray-700 dark:text-gray-300">{dn(reviewer)}</td>
-                    <td className="px-2 py-1 text-right text-gray-700 dark:text-gray-300">{count}</td>
-                    <td className="px-2 py-1">
-                      <div className="h-4 w-24 overflow-hidden rounded bg-gray-100 dark:bg-gray-800">
-                        <div
-                          className="h-full rounded bg-green-500"
-                          style={{
-                            width: `${github.reviewHealth.totalReviews > 0 ? (count / github.reviewHealth.totalReviews) * 100 : 0}%`,
-                          }}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          {reviewerEntries.length > 0 && (() => {
+            const REVIEWER_COLORS = [
+              "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444",
+              "#06b6d4", "#ec4899", "#14b8a6",
+            ];
+            const barData = reviewerEntries.map(([reviewer, count]) => ({
+              name: dn(reviewer),
+              reviews: count,
+            }));
+            return (
+              <ResponsiveContainer width="100%" height={reviewerEntries.length * 40 + 40}>
+                <BarChart data={barData} layout="vertical" margin={{ left: 20, right: 20, top: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" allowDecimals={false} />
+                  <YAxis type="category" dataKey="name" width={100} fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="reviews" name="Reviews" radius={[0, 4, 4, 0]}>
+                    {barData.map((_, i) => (
+                      <Cell key={i} fill={REVIEWER_COLORS[i % REVIEWER_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            );
+          })()}
+          {dailyPending && dailyPending.entries.length > 0 && (() => {
+            const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+            const DAY_LABELS: Record<string, string> = {
+              Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금",
+            };
+            const REVIEWER_COLORS: Record<string, string> = {
+              Ryan: "#3b82f6", Soowon: "#22c55e", Baz: "#f59e0b",
+              Jun: "#8b5cf6", Jooman: "#ef4444",
+            };
+            const defaultColors = [
+              "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444",
+              "#06b6d4", "#ec4899", "#14b8a6",
+            ];
+
+            // Collect all reviewers
+            const allReviewers = new Set<string>();
+            for (const entry of dailyPending.entries) {
+              for (const reviewer of Object.keys(entry.byReviewer)) {
+                allReviewers.add(reviewer);
+              }
+            }
+            const reviewers = [...allReviewers];
+
+            // Build chart data sorted by day order
+            const sorted = dailyPending.entries
+              .filter((e) => DAY_ORDER.includes(e.day))
+              .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
+            const chartData = sorted.map((entry) => {
+              const point: Record<string, string | number> = {
+                day: DAY_LABELS[entry.day] ?? entry.day,
+              };
+              for (const reviewer of reviewers) {
+                point[reviewer] = entry.byReviewer[reviewer] ?? 0;
+              }
+              return point;
+            });
+
+            return (
+              <div className="mt-4">
+                <h3 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Pending Reviews (Daily)
+                </h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="day" fontSize={12} />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip
+                      formatter={(value, name) => [value, dn(String(name))]}
+                    />
+                    <Legend formatter={(value: string) => dn(value)} />
+                    {reviewers.map((reviewer, i) => (
+                      <Bar
+                        key={reviewer}
+                        dataKey={reviewer}
+                        stackId="pending"
+                        fill={REVIEWER_COLORS[dn(reviewer)] ?? defaultColors[i % defaultColors.length]}
+                        name={reviewer}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -498,7 +859,29 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {} 
         </div>
       )}
 
-      {/* Expanded: Action Items */}
+      {/* Chart: PR Activity by Repo */}
+      <div className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+          PR Activity by Repo
+        </h2>
+        <PRActivityChart repos={github.repos} />
+      </div>
+
+      {/* ── Context Sync ─────────────────────────── */}
+      <SectionDivider label="Context Sync" />
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+        <div className="cursor-pointer" onClick={() => toggle("actions")}>
+          <MetricCard
+            title="Action Items"
+            value={`${doneActions}/${totalActions}`}
+            subtitle={`${contextSync.totalSessions} sync sessions`}
+            color={actionItemsColor(doneActions, totalActions)}
+          />
+        </div>
+      </div>
+
+      {/* Expanded: Action Items (Context Sync section) */}
       {expandedCard === "actions" && (
         <div className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
           <h2 className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">
@@ -538,216 +921,6 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {} 
           )}
         </div>
       )}
-
-      {/* 3a. Weekly Retro Summary — grouped by Weekly Goal */}
-      {project && project.items.length > 0 && (
-        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
-          <button
-            onClick={() => setRetroExpanded(!retroExpanded)}
-            className="flex w-full items-center justify-between p-4"
-          >
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Weekly Retro: {project.sprint}
-            </h2>
-            <span className="text-sm text-gray-500">
-              {retroExpanded ? "접기" : "펼치기"}
-            </span>
-          </button>
-          {retroExpanded && (
-            <div className="space-y-4 px-4 pb-4">
-              {Object.entries(project.byWeeklyGoal ?? {}).length > 0 ? (
-                Object.entries(project.byWeeklyGoal ?? {}).map(([goalName, goalItems]) => {
-                  const merged = goalItems.filter((i) => i.merged).length;
-                  const total = goalItems.length;
-                  return (
-                    <div key={goalName} className="rounded-lg border border-gray-200 dark:border-gray-700">
-                      {/* Weekly Goal header */}
-                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {goalName}
-                        </h3>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-gray-400">
-                            {merged}/{total} merged
-                          </span>
-                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                            <div
-                              className="h-full rounded-full bg-green-500"
-                              style={{ width: `${total > 0 ? (merged / total) * 100 : 0}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      {/* PR table */}
-                      <RetroTable items={goalItems} dn={dn} />
-                    </div>
-                  );
-                })
-              ) : (
-                /* Fallback: group by monthly goal as table */
-                Object.entries(project.byGoal).map(([goal, goalItems]) => {
-                  const merged = goalItems.filter((i) => i.merged).length;
-                  return (
-                    <div key={goal} className="rounded-lg border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {goal}
-                        </h3>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-gray-400">
-                            {merged}/{goalItems.length} merged
-                          </span>
-                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                            <div
-                              className="h-full rounded-full bg-green-500"
-                              style={{ width: `${goalItems.length > 0 ? (merged / goalItems.length) * 100 : 0}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <RetroTable items={goalItems} dn={dn} />
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 3b. Goal Health */}
-      {project && project.goalProgress.length > 0 && (
-        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
-          <button
-            onClick={() => setGoalHealthExpanded(!goalHealthExpanded)}
-            className="flex w-full items-center justify-between p-4"
-          >
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Goal Health
-            </h2>
-            <span className="text-sm text-gray-500">
-              {goalHealthExpanded ? "접기" : "펼치기"}
-            </span>
-          </button>
-          {goalHealthExpanded && (
-            <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
-              {project.goalProgress.map((goal) => {
-                const prev = previousGoalMap.get(goal.goalName);
-                const mergedDelta = prev ? goal.mergedCount - prev.mergedCount : null;
-                const inReviewDelta = prev ? goal.inReviewCount - prev.inReviewCount : null;
-                return (
-                  <div key={goal.goalName} className="rounded border border-gray-200 p-3 dark:border-gray-700">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {goal.goalName}
-                      </h3>
-                      <span className="text-sm font-bold text-blue-600">{goal.progressPercent}%</span>
-                    </div>
-                    {/* Progress bar */}
-                    <div className="mb-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                      <div
-                        className="h-full rounded-full bg-green-500"
-                        style={{ width: `${goal.progressPercent}%` }}
-                      />
-                    </div>
-                    {/* Status distribution */}
-                    <div className="flex gap-3 text-xs text-gray-500">
-                      <span className="text-green-600">
-                        {goal.mergedCount} merged
-                        {mergedDelta !== null && mergedDelta !== 0 && (
-                          <span className={mergedDelta > 0 ? "ml-1 text-green-500" : "ml-1 text-red-500"}>
-                            {mergedDelta > 0 ? `+${mergedDelta}` : mergedDelta}
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-blue-600">
-                        {goal.inReviewCount} in review
-                        {inReviewDelta !== null && inReviewDelta !== 0 && (
-                          <span className={inReviewDelta > 0 ? "ml-1 text-blue-500" : "ml-1 text-red-500"}>
-                            {inReviewDelta > 0 ? `+${inReviewDelta}` : inReviewDelta}
-                          </span>
-                        )}
-                      </span>
-                      <span>{goal.draftCount} draft</span>
-                      {goal.closedCount > 0 && <span className="text-red-500">{goal.closedCount} closed</span>}
-                    </div>
-                    {/* Assignees */}
-                    {goal.assignees.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {goal.assignees.map((a) => (
-                          <span key={a} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                            {dn(a)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 3c. Individual Summary */}
-      {project && Object.keys(project.byAssignee).length > 0 && (
-        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
-          <button
-            onClick={() => setIndividualExpanded(!individualExpanded)}
-            className="flex w-full items-center justify-between p-4"
-          >
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Individual Summary
-            </h2>
-            <span className="text-sm text-gray-500">
-              {individualExpanded ? "접기" : "펼치기"}
-            </span>
-          </button>
-          {individualExpanded && (
-            <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
-              {Object.entries(project.byAssignee).map(([assignee, items]) => {
-                const merged = items.filter((i) => i.merged).length;
-                const inReview = items.filter((i) => i.status === "In Review").length;
-                const draft = items.filter((i) => i.status === "Draft").length;
-                // Group by goal
-                const goalGroups = new Map<string, number>();
-                for (const item of items) {
-                  const g = item.monthlyGoal ?? "Ungrouped";
-                  goalGroups.set(g, (goalGroups.get(g) ?? 0) + 1);
-                }
-                return (
-                  <div key={assignee} className="rounded border border-gray-200 p-3 dark:border-gray-700">
-                    <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
-                      {dn(assignee)}
-                    </h3>
-                    <div className="mb-2 flex gap-3 text-xs">
-                      <span className="text-green-600">{merged} merged</span>
-                      <span className="text-blue-600">{inReview} in review</span>
-                      <span className="text-gray-500">{draft} draft</span>
-                    </div>
-                    <div className="space-y-1">
-                      {[...goalGroups.entries()].map(([goal, count]) => (
-                        <div key={goal} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-600 dark:text-gray-400">{goal}</span>
-                          <span className="font-medium text-gray-700 dark:text-gray-300">{count} items</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Chart: PR Activity by Repo */}
-      <div className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-900">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-          PR Activity by Repo
-        </h2>
-        <PRActivityChart repos={github.repos} />
-      </div>
 
       {/* Context Sync: sessions with PR mentions and action items */}
       {contextSync.notes.length > 0 && (

@@ -54,11 +54,12 @@ export async function setGhStatusOverride(
   await redis.set(`ghstatus:${itemId}`, status);
 }
 
-// --- GitHub field override (startDate, deadline) ---
+// --- GitHub field override (startDate, estimatedDeadline, actualDeadline) ---
 
 interface GhFieldOverride {
   startDate?: string;
-  deadline?: string;
+  estimatedDeadline?: string;
+  actualDeadline?: string;
 }
 
 /** Get the user-overridden fields for a GitHub project item. */
@@ -68,10 +69,16 @@ async function getGhFieldOverride(
   const redis = getRedis();
   const data = await redis.get<string>(`ghoverride:${itemId}`);
   if (!data) return null;
-  return typeof data === "string" ? JSON.parse(data) : data;
+  const fields: Record<string, unknown> = typeof data === "string" ? JSON.parse(data) : data;
+  // Backfill old `deadline` → `estimatedDeadline`
+  if ("deadline" in fields && !("estimatedDeadline" in fields)) {
+    fields.estimatedDeadline = fields.deadline;
+    delete fields.deadline;
+  }
+  return fields as GhFieldOverride;
 }
 
-/** Set field overrides (startDate, deadline) for a GitHub project item. */
+/** Set field overrides (startDate, estimatedDeadline, actualDeadline) for a GitHub project item. */
 export async function setGhFieldOverride(
   itemId: string,
   fields: GhFieldOverride
@@ -100,11 +107,21 @@ async function getGhMonthlyGoals(month: string): Promise<MonthlyGoal[]> {
   return typeof data === "string" ? JSON.parse(data) : data;
 }
 
+/** Backfill old `deadline` → `estimatedDeadline` for tasks not yet migrated. */
+function migrateTaskFields(task: Record<string, unknown>): WeeklyTask {
+  if ("deadline" in task && !("estimatedDeadline" in task)) {
+    const { deadline, ...rest } = task;
+    return { ...rest, estimatedDeadline: deadline } as unknown as WeeklyTask;
+  }
+  return task as unknown as WeeklyTask;
+}
+
 async function getGhWeeklyTasks(weekId: string): Promise<WeeklyTask[]> {
   const redis = getRedis();
   const data = await redis.get<string>(`ghproject:week:${weekId}`);
   if (!data) return [];
-  return typeof data === "string" ? JSON.parse(data) : data;
+  const raw: Record<string, unknown>[] = typeof data === "string" ? JSON.parse(data) : data;
+  return raw.map(migrateTaskFields);
 }
 
 // --- Apply status overrides ---
@@ -134,7 +151,8 @@ async function applyWeeklyOverrides(
       let result = t;
       if (statusOverride) result = { ...result, status: statusOverride };
       if (fieldOverride?.startDate) result = { ...result, startDate: fieldOverride.startDate };
-      if (fieldOverride?.deadline) result = { ...result, deadline: fieldOverride.deadline };
+      if (fieldOverride?.estimatedDeadline) result = { ...result, estimatedDeadline: fieldOverride.estimatedDeadline };
+      if (fieldOverride?.actualDeadline) result = { ...result, actualDeadline: fieldOverride.actualDeadline };
       return result;
     })
   );

@@ -5,6 +5,8 @@
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -12,7 +14,20 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import type { WeeklySnapshot } from "@/lib/types";
+import type { WeeklySnapshot, WeeklyPendingReviews } from "@/lib/types";
+
+const MEMBER_COLORS: Record<string, string> = {
+  Ryan: "#3b82f6",
+  Soowon: "#22c55e",
+  Baz: "#f59e0b",
+  Jun: "#8b5cf6",
+  Jooman: "#ef4444",
+};
+
+const DEFAULT_COLORS = [
+  "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444",
+  "#06b6d4", "#ec4899", "#14b8a6",
+];
 
 interface TrendLineChartProps {
   snapshots: WeeklySnapshot[];
@@ -122,6 +137,206 @@ export function ReviewLatencyTrendChart({ snapshots }: TrendLineChartProps) {
           strokeWidth={2}
         />
       </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+interface ReviewByReviewerTrendChartProps {
+  snapshots: WeeklySnapshot[];
+  displayNames?: Record<string, string>;
+}
+
+export function ReviewByReviewerTrendChart({
+  snapshots,
+  displayNames = {},
+}: ReviewByReviewerTrendChartProps) {
+  const dn = (name: string) => displayNames[name] ?? name;
+
+  // Collect all unique reviewers across all snapshots
+  const allReviewers = new Set<string>();
+  for (const s of snapshots) {
+    for (const reviewer of Object.keys(s.github.reviewHealth.byReviewer)) {
+      allReviewers.add(reviewer);
+    }
+  }
+
+  const data = snapshots.map((s) => {
+    const point: Record<string, string | number> = {
+      week: s.weekId.replace(/^\d{4}-/, ""),
+    };
+    for (const reviewer of allReviewers) {
+      point[reviewer] = s.github.reviewHealth.byReviewer[reviewer] ?? 0;
+    }
+    return point;
+  });
+
+  const reviewers = [...allReviewers];
+
+  if (data.length === 0) {
+    return (
+      <div className="flex h-64 items-center justify-center text-gray-500">
+        No review data
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="week" fontSize={12} />
+        <YAxis allowDecimals={false} />
+        <Tooltip
+          formatter={(value, name) => [value, dn(String(name))]}
+        />
+        <Legend formatter={(value: string) => dn(value)} />
+        {reviewers.map((reviewer, i) => (
+          <Bar
+            key={reviewer}
+            dataKey={reviewer}
+            stackId="reviews"
+            fill={MEMBER_COLORS[reviewer] ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]}
+            name={reviewer}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+interface DeadlineAccuracyPoint {
+  weekId: string;
+  onTimeRate: number;
+  avgDeltaDays: number | null;
+}
+
+interface DeadlineAccuracyTrendChartProps {
+  data: DeadlineAccuracyPoint[];
+}
+
+export function DeadlineAccuracyTrendChart({ data }: DeadlineAccuracyTrendChartProps) {
+  const chartData = data.map((d) => ({
+    week: d.weekId.replace(/^\d{4}-/, ""),
+    onTimeRate: d.onTimeRate,
+    avgDelta: d.avgDeltaDays ?? 0,
+  }));
+
+  if (chartData.length === 0) {
+    return (
+      <div className="flex h-64 items-center justify-center text-gray-500">
+        No deadline accuracy data
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <LineChart data={chartData}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="week" fontSize={12} />
+        <YAxis yAxisId="left" domain={[0, 100]} allowDecimals={false} />
+        <YAxis yAxisId="right" orientation="right" />
+        <Tooltip />
+        <Legend />
+        <Line
+          yAxisId="left"
+          type="monotone"
+          dataKey="onTimeRate"
+          stroke="#22c55e"
+          name="On-Time Rate (%)"
+          strokeWidth={2}
+        />
+        <Line
+          yAxisId="right"
+          type="monotone"
+          dataKey="avgDelta"
+          stroke="#f59e0b"
+          name="Avg Delta (days)"
+          strokeWidth={2}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+interface PendingReviewTrendChartProps {
+  pendingByWeek: Record<string, WeeklyPendingReviews>;
+  weekIds: string[];
+  displayNames?: Record<string, string>;
+}
+
+export function PendingReviewTrendChart({
+  pendingByWeek,
+  weekIds,
+  displayNames = {},
+}: PendingReviewTrendChartProps) {
+  const dn = (name: string) => displayNames[name] ?? name;
+  const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  const DAY_LABELS: Record<string, string> = {
+    Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금",
+  };
+
+  // Collect all reviewers across all weeks
+  const allReviewers = new Set<string>();
+  for (const weekId of weekIds) {
+    const pending = pendingByWeek[weekId];
+    if (!pending) continue;
+    for (const entry of pending.entries) {
+      for (const reviewer of Object.keys(entry.byReviewer)) {
+        allReviewers.add(reviewer);
+      }
+    }
+  }
+  const reviewers = [...allReviewers];
+
+  // Build chart data: one bar group per day across all weeks
+  const data: Record<string, string | number>[] = [];
+  for (const weekId of weekIds) {
+    const pending = pendingByWeek[weekId];
+    if (!pending) continue;
+    const weekLabel = weekId.replace(/^\d{4}-/, "");
+    const sorted = pending.entries
+      .filter((e) => DAY_ORDER.includes(e.day))
+      .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
+    for (const entry of sorted) {
+      const point: Record<string, string | number> = {
+        label: `${weekLabel} ${DAY_LABELS[entry.day] ?? entry.day}`,
+      };
+      for (const reviewer of reviewers) {
+        point[reviewer] = entry.byReviewer[reviewer] ?? 0;
+      }
+      data.push(point);
+    }
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="flex h-64 items-center justify-center text-gray-500">
+        No pending review data
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="label" fontSize={10} angle={-30} textAnchor="end" height={50} />
+        <YAxis allowDecimals={false} />
+        <Tooltip
+          formatter={(value, name) => [value, dn(String(name))]}
+        />
+        <Legend formatter={(value: string) => dn(value)} />
+        {reviewers.map((reviewer, i) => (
+          <Bar
+            key={reviewer}
+            dataKey={reviewer}
+            stackId="pending"
+            fill={MEMBER_COLORS[reviewer] ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]}
+            name={reviewer}
+          />
+        ))}
+      </BarChart>
     </ResponsiveContainer>
   );
 }

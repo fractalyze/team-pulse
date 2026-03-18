@@ -72,11 +72,21 @@ export async function getAllGoalWeekIds(): Promise<string[]> {
 
 // --- Weekly Tasks ---
 
+/** Backfill old `deadline` → `estimatedDeadline` for tasks not yet migrated. */
+function migrateTaskFields(task: Record<string, unknown>): WeeklyTask {
+  if ("deadline" in task && !("estimatedDeadline" in task)) {
+    const { deadline, ...rest } = task;
+    return { ...rest, estimatedDeadline: deadline } as unknown as WeeklyTask;
+  }
+  return task as unknown as WeeklyTask;
+}
+
 export async function getWeeklyTasks(weekId: string): Promise<WeeklyTask[]> {
   const redis = getRedis();
   const data = await redis.get<string>(`goal:week:${weekId}`);
   if (!data) return [];
-  return typeof data === "string" ? JSON.parse(data) : data;
+  const raw: Record<string, unknown>[] = typeof data === "string" ? JSON.parse(data) : data;
+  return raw.map(migrateTaskFields);
 }
 
 export async function saveWeeklyTasks(

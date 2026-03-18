@@ -525,7 +525,8 @@ function WeeklyTab() {
             id: t.id,
             status: t.status,
             startDate: t.startDate ?? "",
-            deadline: t.deadline,
+            estimatedDeadline: t.estimatedDeadline,
+            actualDeadline: t.actualDeadline,
           }),
         })
       )
@@ -539,7 +540,8 @@ function WeeklyTab() {
       weekId,
       assignee,
       content: "",
-      deadline: "",
+      estimatedDeadline: "",
+      actualDeadline: undefined,
       status: "not_started",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -723,11 +725,20 @@ function WeeklyTab() {
                         />
                         <input
                           type="date"
-                          value={task.deadline}
+                          value={task.estimatedDeadline}
                           onChange={(e) =>
-                            updateTask(task.id, { deadline: e.target.value })
+                            updateTask(task.id, { estimatedDeadline: e.target.value })
                           }
-                          title="Deadline"
+                          title="Estimated deadline"
+                          className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                        />
+                        <input
+                          type="date"
+                          value={task.actualDeadline ?? ""}
+                          onChange={(e) =>
+                            updateTask(task.id, { actualDeadline: e.target.value || undefined })
+                          }
+                          title="Actual deadline"
                           className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                         />
                       </div>
@@ -903,11 +914,20 @@ function WeeklyTab() {
                 />
                 <input
                   type="date"
-                  value={task.deadline}
+                  value={task.estimatedDeadline}
                   onChange={(e) =>
-                    updateTask(task.id, { deadline: e.target.value })
+                    updateTask(task.id, { estimatedDeadline: e.target.value })
                   }
-                  title="Deadline"
+                  title="Estimated deadline"
+                  className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                />
+                <input
+                  type="date"
+                  value={task.actualDeadline ?? ""}
+                  onChange={(e) =>
+                    updateTask(task.id, { actualDeadline: e.target.value || undefined })
+                  }
+                  title="Actual deadline"
                   className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                 />
                 <select

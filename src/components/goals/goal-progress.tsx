@@ -381,9 +381,9 @@ export function GoalProgress({
                           <span className="text-xs text-gray-400">
                             ({task.assignee})
                           </span>
-                          {task.deadline && (
+                          {task.estimatedDeadline && (
                             <span className="rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
-                              {task.deadline.slice(5)}
+                              {task.estimatedDeadline.slice(5)}
                             </span>
                           )}
                         </div>

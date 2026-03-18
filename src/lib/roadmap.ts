@@ -13,8 +13,8 @@ import { getWeekId, getWeekRange, getWeekIdsForMonth } from "./week";
 /** Check if a task is blocking: deadline passed and not done/closed. */
 export function isTaskBlocking(task: WeeklyTask, now: Date): boolean {
   if (task.status === "done" || task.status === "closed") return false;
-  if (!task.deadline) return false;
-  return new Date(task.deadline) < now;
+  if (!task.estimatedDeadline) return false;
+  return new Date(task.estimatedDeadline) < now;
 }
 
 /** Check if a month is at risk: has blocking tasks or progress behind schedule. */

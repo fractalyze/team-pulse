@@ -29,7 +29,7 @@ interface TaskBar {
   id: string;
   content: string;
   status: GoalStatus;
-  deadline: string;
+  estimatedDeadline: string;
   leftPct: number;
   widthPct: number;
   isBlocking: boolean;
@@ -86,8 +86,8 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
         const taskStart = task.startDate
           ? new Date(task.startDate)
           : toUtcMidnight(weekStart);
-        const taskEnd = task.deadline
-          ? new Date(task.deadline) // "YYYY-MM-DD" → UTC midnight
+        const taskEnd = task.estimatedDeadline
+          ? new Date(task.estimatedDeadline) // "YYYY-MM-DD" → UTC midnight
           : toUtcMidnight(weekEnd);
 
         // Clamp to month boundaries
@@ -106,7 +106,7 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
           id: task.id,
           content: task.content,
           status: task.status,
-          deadline: task.deadline,
+          estimatedDeadline: task.estimatedDeadline,
           leftPct: (leftDays / totalDays) * 100,
           widthPct: Math.max(
             (widthDays / totalDays) * 100,
@@ -222,7 +222,7 @@ export function TimelineGantt({ month }: TimelineGanttProps) {
                         marginLeft: `${bar.leftPct}%`,
                         width: `${bar.widthPct}%`,
                       }}
-                      title={`${bar.isGithub ? "[DEV] " : ""}${bar.content}${bar.deadline ? ` (~ ${bar.deadline.slice(5)})` : ""}${bar.isBlocking ? " ⚠ Overdue" : ""}`}
+                      title={`${bar.isGithub ? "[DEV] " : ""}${bar.content}${bar.estimatedDeadline ? ` (~ ${bar.estimatedDeadline.slice(5)})` : ""}${bar.isBlocking ? " ⚠ Overdue" : ""}`}
                     >
                       {bar.content}
                     </div>

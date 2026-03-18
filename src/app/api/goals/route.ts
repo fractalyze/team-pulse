@@ -117,7 +117,7 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
-  const { tier, id, status, startDate, deadline } = body;
+  const { tier, id, status, startDate, estimatedDeadline, actualDeadline } = body;
 
   const validStatuses = ["not_started", "in_progress", "done", "closed"];
   if (!validStatuses.includes(status)) {
@@ -131,7 +131,8 @@ export async function PATCH(request: Request) {
     // Also store date overrides if provided
     const fields: Record<string, string> = {};
     if (typeof startDate === "string") fields.startDate = startDate;
-    if (typeof deadline === "string") fields.deadline = deadline;
+    if (typeof estimatedDeadline === "string") fields.estimatedDeadline = estimatedDeadline;
+    if (typeof actualDeadline === "string") fields.actualDeadline = actualDeadline;
     if (Object.keys(fields).length > 0) {
       await setGhFieldOverride(itemId, fields);
     }

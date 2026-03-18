@@ -300,7 +300,7 @@ function mapToGoals(items: ProjectItem[]): MappedGoals {
         weekId,
         assignee,
         content: title,
-        deadline: "",
+        estimatedDeadline: "",
         status: mapGitHubStatus(ghStatus),
         goalId,
         source: "github",
