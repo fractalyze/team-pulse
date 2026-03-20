@@ -244,9 +244,9 @@ async function collectPRReviews(
   return reviews;
 }
 
-/** Check if a reviewer is a bot. */
+/** Check if a login is a bot or service account. */
 function isBot(login: string): boolean {
-  return login.endsWith("[bot]") || login === "github-actions";
+  return login.endsWith("[bot]") || login === "github-actions" || login === "fractalyze-dev";
 }
 
 /** Compute review health metrics from review data and merged PRs. */
@@ -380,11 +380,15 @@ export async function collectGitHubMetrics(
 
   for (const repo of MONITORED_REPOS) {
     try {
-      const [merged, open, commitCounts] = await Promise.all([
+      const [rawMerged, rawOpen, commitCounts] = await Promise.all([
         collectMergedPRs(octokit, repo, start, end),
         collectOpenPRs(octokit, repo),
         collectCommitCounts(octokit, repo, start, end),
       ]);
+
+      // Filter out bot/service account PRs and commits
+      const merged = rawMerged.filter((pr) => !isBot(pr.author));
+      const open = rawOpen.filter((pr) => !isBot(pr.author));
 
       repos.push({
         repo,
@@ -398,13 +402,11 @@ export async function collectGitHubMetrics(
       totalOpen += open.length;
       allMergedPRs.push(...merged);
 
-      // Aggregate commits
+      // Aggregate commits (exclude bot authors)
       for (const [author, count] of Object.entries(commitCounts)) {
-        if (author === "__total__") {
-          totalCommits += count;
-        } else {
-          commitsByAuthor[author] = (commitsByAuthor[author] ?? 0) + count;
-        }
+        if (author === "__total__" || isBot(author)) continue;
+        commitsByAuthor[author] = (commitsByAuthor[author] ?? 0) + count;
+        totalCommits += count;
       }
 
       // Aggregate by author
