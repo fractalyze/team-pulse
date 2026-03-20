@@ -19,6 +19,9 @@ import { PRActivityChart } from "@/components/charts/pr-activity";
 import type { DashboardSummary, WeeklySnapshot, WeeklyTask, PRInfo, ProjectItem, GoalProgressSummary, WeeklyPendingReviews } from "@/lib/types";
 import { computeDeadlineAccuracy } from "@/lib/deadline-accuracy";
 import type { DeadlineAccuracy } from "@/lib/deadline-accuracy";
+import { getMemberColor } from "@/lib/chart-colors";
+
+const BOT_ACCOUNTS = new Set(["fractalyze-dev", "github-actions"]);
 
 interface DashboardContentProps {
   summary: DashboardSummary;
@@ -271,80 +274,7 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {},
         <DeadlineAccuracyDetail tasks={weeklyTasks} accuracy={accuracy} />
       )}
 
-      {/* 3a. Weekly Retro Summary — grouped by Weekly Goal */}
-      {project && project.items.length > 0 && (
-        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
-          <button
-            onClick={() => setRetroExpanded(!retroExpanded)}
-            className="flex w-full items-center justify-between p-4"
-          >
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Weekly Retro: {project.sprint}
-            </h2>
-            <span className="text-sm text-gray-500">
-              {retroExpanded ? "접기" : "펼치기"}
-            </span>
-          </button>
-          {retroExpanded && (
-            <div className="space-y-4 px-4 pb-4">
-              {Object.entries(project.byWeeklyGoal ?? {}).length > 0 ? (
-                Object.entries(project.byWeeklyGoal ?? {}).map(([goalName, goalItems]) => {
-                  const merged = goalItems.filter((i) => i.merged).length;
-                  const total = goalItems.length;
-                  return (
-                    <div key={goalName} className="rounded-lg border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {goalName}
-                        </h3>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-gray-400">
-                            {merged}/{total} merged
-                          </span>
-                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                            <div
-                              className="h-full rounded-full bg-green-500"
-                              style={{ width: `${total > 0 ? (merged / total) * 100 : 0}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <RetroTable items={goalItems} dn={dn} />
-                    </div>
-                  );
-                })
-              ) : (
-                Object.entries(project.byGoal).map(([goal, goalItems]) => {
-                  const merged = goalItems.filter((i) => i.merged).length;
-                  return (
-                    <div key={goal} className="rounded-lg border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {goal}
-                        </h3>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-gray-400">
-                            {merged}/{goalItems.length} merged
-                          </span>
-                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                            <div
-                              className="h-full rounded-full bg-green-500"
-                              style={{ width: `${goalItems.length > 0 ? (merged / goalItems.length) * 100 : 0}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <RetroTable items={goalItems} dn={dn} />
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 3b. Goal Health */}
+      {/* Goal Health */}
       {project && project.goalProgress.length > 0 && (
         <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
           <button
@@ -431,7 +361,7 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {},
           </button>
           {individualExpanded && (
             <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
-              {Object.entries(project.byAssignee).map(([assignee, items]) => {
+              {Object.entries(project.byAssignee).filter(([assignee]) => !BOT_ACCOUNTS.has(assignee)).map(([assignee, items]) => {
                 const merged = items.filter((i) => i.merged).length;
                 const inReview = items.filter((i) => i.status === "In Review").length;
                 const draft = items.filter((i) => i.status === "Draft").length;
@@ -461,6 +391,79 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {},
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Weekly Retro Summary — grouped by Weekly Goal */}
+      {project && project.items.length > 0 && (
+        <div className="rounded-lg bg-white shadow-sm dark:bg-gray-900">
+          <button
+            onClick={() => setRetroExpanded(!retroExpanded)}
+            className="flex w-full items-center justify-between p-4"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Weekly Retro: {project.sprint}
+            </h2>
+            <span className="text-sm text-gray-500">
+              {retroExpanded ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {retroExpanded && (
+            <div className="space-y-4 px-4 pb-4">
+              {Object.entries(project.byWeeklyGoal ?? {}).length > 0 ? (
+                Object.entries(project.byWeeklyGoal ?? {}).map(([goalName, goalItems]) => {
+                  const merged = goalItems.filter((i) => i.merged).length;
+                  const total = goalItems.length;
+                  return (
+                    <div key={goalName} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {goalName}
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-400">
+                            {merged}/{total} merged
+                          </span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className="h-full rounded-full bg-green-500"
+                              style={{ width: `${total > 0 ? (merged / total) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <RetroTable items={goalItems} dn={dn} />
+                    </div>
+                  );
+                })
+              ) : (
+                Object.entries(project.byGoal).map(([goal, goalItems]) => {
+                  const merged = goalItems.filter((i) => i.merged).length;
+                  return (
+                    <div key={goal} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-800">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {goal}
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-400">
+                            {merged}/{goalItems.length} merged
+                          </span>
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className="h-full rounded-full bg-green-500"
+                              style={{ width: `${goalItems.length > 0 ? (merged / goalItems.length) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <RetroTable items={goalItems} dn={dn} />
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>
@@ -683,10 +686,6 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {},
             </div>
           )}
           {reviewerEntries.length > 0 && (() => {
-            const REVIEWER_COLORS = [
-              "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444",
-              "#06b6d4", "#ec4899", "#14b8a6",
-            ];
             const barData = reviewerEntries.map(([reviewer, count]) => ({
               name: dn(reviewer),
               reviews: count,
@@ -699,8 +698,8 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {},
                   <YAxis type="category" dataKey="name" width={100} fontSize={12} />
                   <Tooltip />
                   <Bar dataKey="reviews" name="Reviews" radius={[0, 4, 4, 0]}>
-                    {barData.map((_, i) => (
-                      <Cell key={i} fill={REVIEWER_COLORS[i % REVIEWER_COLORS.length]} />
+                    {barData.map((entry, i) => (
+                      <Cell key={i} fill={getMemberColor(entry.name, i)} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -712,14 +711,6 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {},
             const DAY_LABELS: Record<string, string> = {
               Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금",
             };
-            const REVIEWER_COLORS: Record<string, string> = {
-              Ryan: "#3b82f6", Soowon: "#22c55e", Baz: "#f59e0b",
-              Jun: "#8b5cf6", Jooman: "#ef4444",
-            };
-            const defaultColors = [
-              "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444",
-              "#06b6d4", "#ec4899", "#14b8a6",
-            ];
 
             // Collect all reviewers
             const allReviewers = new Set<string>();
@@ -763,7 +754,7 @@ export function DashboardContent({ summary, previousSnapshot, displayNames = {},
                         key={reviewer}
                         dataKey={reviewer}
                         stackId="pending"
-                        fill={REVIEWER_COLORS[dn(reviewer)] ?? defaultColors[i % defaultColors.length]}
+                        fill={getMemberColor(dn(reviewer), i)}
                         name={reviewer}
                       />
                     ))}
@@ -1072,6 +1063,10 @@ function PRQueueTable({
 
 /** Retro PR table: status, linkable title with repo chip, author. */
 function RetroTable({ items, dn }: { items: ProjectItem[]; dn: (name: string) => string }) {
+  const filtered = items.filter((i) => {
+    const author = i.assignees.length > 0 ? i.assignees[0] : i.author ?? "";
+    return !BOT_ACCOUNTS.has(author);
+  });
   return (
     <div className="overflow-x-auto">
       <table className="w-full table-fixed text-sm">
@@ -1083,7 +1078,7 @@ function RetroTable({ items, dn }: { items: ProjectItem[]; dn: (name: string) =>
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
+          {filtered.map((item) => (
             <tr key={item.id} className="border-b border-gray-50 last:border-b-0 dark:border-gray-800/50">
               <td className="px-4 py-1.5">
                 <StatusBadge status={item.status} />

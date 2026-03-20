@@ -13,14 +13,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { WeeklySnapshot } from "@/lib/types";
-
-const MEMBER_COLORS: Record<string, string> = {
-  Ryan: "#3b82f6",
-  Soowon: "#22c55e",
-  Baz: "#f59e0b",
-  Jun: "#8b5cf6",
-  Jooman: "#ef4444",
-};
+import { getMemberColor } from "@/lib/chart-colors";
 
 interface VelocityBarChartProps {
   snapshots: WeeklySnapshot[];
@@ -48,10 +41,6 @@ export function VelocityBarChart({ snapshots }: VelocityBarChartProps) {
   });
 
   const authors = [...allAuthors];
-  const defaultColors = [
-    "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444",
-    "#06b6d4", "#ec4899", "#14b8a6",
-  ];
 
   if (data.length === 0) {
     return (
@@ -74,7 +63,7 @@ export function VelocityBarChart({ snapshots }: VelocityBarChartProps) {
             key={author}
             dataKey={author}
             stackId="velocity"
-            fill={MEMBER_COLORS[author] ?? defaultColors[i % defaultColors.length]}
+            fill={getMemberColor(author, i)}
             name={author}
           />
         ))}
